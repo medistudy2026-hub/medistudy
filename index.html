@@ -1,0 +1,2477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediStudy — MBBS Companion</title>
+<script>
+// OFFLINE BOOT — runs before anything else
+// If offline, try to serve cached version from Cache API
+(function(){
+  if(navigator.onLine) return; // Online — nothing to do
+  if(!('caches' in window)) return; // No Cache API — nothing to do
+  // Check if app shell is cached, inject if current page failed to load
+  window.addEventListener('DOMContentLoaded', function(){
+    setTimeout(function(){
+      // If page-home exists, app loaded fine even offline
+      if(document.getElementById('page-home')) return;
+      // App failed to load — try cache
+      var urls = [location.href, location.origin+'/', location.origin+'/index.html'];
+      caches.open('medistudy-shell-v1').then(function(cache){
+        var tryNext = function(i){
+          if(i >= urls.length) return;
+          cache.match(urls[i]).then(function(resp){
+            if(resp){ resp.text().then(function(html){
+              document.open(); document.write(html); document.close();
+            });}else{ tryNext(i+1); }
+          });
+        };
+        tryNext(0);
+      }).catch(function(){});
+    }, 1000);
+  });
+})();
+</script>
+<style>
+:root{--bg:#0e0f13;--surface:#16181f;--card:#1c1f29;--border:#252836;--accent:#e8a838;--accent2:#e85d38;--blue:#3891e8;--green:#38c49a;--purple:#8b5cf6;--text:#eceef5;--muted:#6b7280;--dim:#3a3f52;--serif:'Fraunces',Georgia,serif;--sans:'DM Sans',system-ui,-apple-system,sans-serif;}
+body.light{--bg:#f4f5f7;--surface:#fff;--card:#fff;--border:#e2e4ea;--text:#1a1c23;--muted:#6b7280;--dim:#c5c8d4;}
+body.light nav{background:rgba(244,245,247,0.95);}
+body.light .msg.ai .msg-bubble{background:#f4f5f7;}
+body.light .chat-input{background:#f4f5f7;color:var(--text);}
+body.light .modal,.fb-modal{background:#fff;}
+body.light .form-group input,body.light .form-group select,body.light .form-group textarea{background:#f4f5f7;color:var(--text);}
+body.light .planner-day{background:#f4f5f7;}
+body.light .search-input{background:#fff;color:var(--text);}
+body.light .pdf-viewer-bar{background:#fff;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;transition:background .3s,color .3s;}
+nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 14px;height:56px;gap:8px;}
+.nav-brand{font-family:var(--serif);font-size:20px;font-weight:900;color:var(--accent);letter-spacing:-.5px;white-space:nowrap;}
+.nav-brand span{color:var(--text);font-weight:300;}
+.nav-tabs{display:flex;gap:2px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:3px;overflow-x:auto;scrollbar-width:none;}
+.nav-tabs::-webkit-scrollbar{display:none;}
+.nav-tab{padding:5px 10px;border-radius:7px;font-size:12px;font-weight:500;cursor:pointer;border:none;background:transparent;color:var(--muted);transition:all .2s;white-space:nowrap;}
+.nav-tab.active{background:var(--accent);color:#0e0f13;font-weight:600;}
+.nav-right{display:flex;gap:6px;align-items:center;}
+.theme-btn{width:32px;height:32px;border-radius:8px;background:var(--dim);border:none;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;}
+.admin-btn{font-size:11px;padding:5px 10px;background:var(--dim);border:none;border-radius:8px;color:var(--muted);cursor:pointer;font-family:var(--sans);white-space:nowrap;}
+.admin-btn:hover{background:var(--border);color:var(--text);}
+.page{display:none;padding:20px 16px;max-width:720px;margin:0 auto;}
+.page.active{display:block;}
+.sec-title{font-family:var(--serif);font-size:26px;font-weight:900;letter-spacing:-.5px;margin-bottom:4px;}
+.sec-title em{color:var(--accent);font-style:italic;}
+.sec-sub{font-size:13px;color:var(--muted);margin-bottom:20px;}
+.hero{background:linear-gradient(135deg,#1c1f29,#16181f);border:1px solid var(--border);border-radius:20px;padding:28px 24px;margin-bottom:20px;position:relative;overflow:hidden;}
+.hero::before{content:'🩺';position:absolute;right:20px;top:20px;font-size:54px;opacity:.1;}
+.hero-tag{display:inline-block;background:var(--accent);color:#0e0f13;font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;letter-spacing:1.5px;margin-bottom:10px;}
+.hero h1{font-family:var(--serif);font-size:28px;font-weight:900;line-height:1.15;margin-bottom:8px;letter-spacing:-.5px;}
+.hero h1 em{color:var(--accent);font-style:italic;}
+.hero p{font-size:13px;color:var(--muted);line-height:1.7;max-width:380px;}
+.home-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.home-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;cursor:pointer;transition:all .25s;}
+.home-card:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 8px 24px rgba(232,168,56,.1);}
+.hc-icon{font-size:26px;margin-bottom:8px;display:block;}
+.hc-title{font-size:14px;font-weight:600;margin-bottom:3px;}
+.hc-desc{font-size:11px;color:var(--muted);line-height:1.5;}
+.hc-arrow{margin-top:10px;font-size:16px;color:var(--accent);}
+.search-wrap{margin-bottom:16px;position:relative;}
+.search-input{width:100%;padding:11px 14px 11px 40px;background:var(--card);border:1px solid var(--border);border-radius:12px;color:var(--text);font-family:var(--sans);font-size:14px;outline:none;transition:border-color .2s;}
+.search-input:focus{border-color:var(--accent);}
+.search-icon{position:absolute;left:13px;top:50%;transform:translateY(-50%);font-size:16px;color:var(--muted);}
+.sr-item{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:all .2s;margin-bottom:8px;}
+.sr-item:hover{border-color:var(--accent);}
+.sr-type{font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;background:var(--dim);color:var(--muted);letter-spacing:1px;}
+.sr-title{font-size:13px;font-weight:600;}
+.sr-sub{font-size:11px;color:var(--muted);}
+.chat-box{background:var(--card);border:1px solid var(--border);border-radius:16px;display:flex;flex-direction:column;height:480px;overflow:hidden;}
+.chat-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;scrollbar-width:thin;scrollbar-color:var(--dim) transparent;}
+.chat-welcome{text-align:center;padding:16px 10px;}
+.chat-welcome h3{font-family:var(--serif);font-size:18px;font-weight:700;margin-bottom:6px;color:var(--accent);}
+.chat-welcome p{font-size:12px;color:var(--muted);margin-bottom:14px;}
+.quick-chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;}
+.qchip{padding:5px 11px;border-radius:20px;font-size:11px;font-weight:500;background:var(--surface);border:1px solid var(--border);color:var(--muted);cursor:pointer;transition:all .2s;}
+.qchip:hover{border-color:var(--accent);color:var(--accent);}
+.msg{display:flex;gap:8px;animation:fadeUp .3s ease;}
+.msg.user{flex-direction:row-reverse;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+.msg-av{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;margin-top:2px;}
+.msg.ai .msg-av{background:linear-gradient(135deg,var(--accent),var(--accent2));}
+.msg.user .msg-av{background:var(--blue);}
+.msg-bubble{max-width:80%;padding:9px 12px;border-radius:11px;font-size:13px;line-height:1.65;}
+.msg.ai .msg-bubble{background:var(--surface);border:1px solid var(--border);border-top-left-radius:4px;}
+.msg.user .msg-bubble{background:var(--blue);color:#fff;border-top-right-radius:4px;}
+.msg-bubble strong{color:var(--accent);}
+.typing{display:flex;gap:4px;align-items:center;padding:4px 0;}
+.tdot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:tb 1.2s infinite;}
+.tdot:nth-child(2){animation-delay:.2s;}.tdot:nth-child(3){animation-delay:.4s;}
+@keyframes tb{0%,60%,100%{transform:translateY(0);opacity:.3;}30%{transform:translateY(-5px);opacity:1;}}
+.chat-input-row{display:flex;gap:8px;padding:10px;border-top:1px solid var(--border);background:var(--surface);}
+.chat-input{flex:1;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:9px 12px;font-family:var(--sans);font-size:13px;color:var(--text);outline:none;resize:none;max-height:80px;transition:border-color .2s;}
+.chat-input:focus{border-color:var(--accent);}
+.chat-input::placeholder{color:var(--muted);}
+.chat-send{width:36px;height:36px;border-radius:9px;background:var(--accent);border:none;cursor:pointer;font-size:15px;color:#0e0f13;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.chat-send:disabled{background:var(--dim);cursor:not-allowed;}
+.breadcrumb{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);margin-bottom:14px;flex-wrap:wrap;}
+.bc-link{cursor:pointer;color:var(--accent);}.bc-link:hover{opacity:.7;}.bc-sep{color:var(--dim);}.bc-cur{color:var(--text);font-weight:600;}
+.folders-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.folder-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:10px;}
+.folder-card:hover{border-color:var(--accent);transform:translateY(-2px);}
+.folder-icon{font-size:24px;flex-shrink:0;}
+.folder-name{font-size:13px;font-weight:600;margin-bottom:2px;}
+.folder-count{font-size:11px;color:var(--muted);}
+.folder-arrow{color:var(--accent);font-size:14px;margin-left:auto;}
+.sit{padding:7px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted);transition:all .2s;}
+.sit.active{background:var(--accent);color:#0e0f13;border-color:var(--accent);}
+.subject-inner-tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;}
+.notes-list{display:flex;flex-direction:column;gap:8px;}
+.note-card{background:var(--card);border:1px solid var(--border);border-radius:11px;padding:14px;display:flex;align-items:center;gap:12px;transition:all .2s;}
+.note-card:hover{border-color:var(--accent);}
+.note-icon{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;background:var(--surface);}
+.note-info{flex:1;min-width:0;}
+.note-title{font-size:13px;font-weight:600;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.note-meta{font-size:11px;color:var(--muted);}
+.note-actions{display:flex;gap:6px;flex-shrink:0;}
+.note-btn{padding:5px 10px;border-radius:7px;font-size:11px;font-weight:600;background:var(--surface);border:1px solid var(--border);color:var(--muted);cursor:pointer;text-decoration:none;transition:all .2s;white-space:nowrap;display:inline-flex;align-items:center;gap:3px;}
+.note-btn:hover{background:var(--accent);color:#0e0f13;border-color:var(--accent);}
+.note-btn.saved{background:#0e3a1c;border-color:var(--green);color:var(--green);}
+.note-btn.save-btn:hover{background:#0e3a1c;border-color:var(--green);color:var(--green);}
+.videos-list{display:flex;flex-direction:column;gap:10px;}
+.video-card{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;transition:all .2s;}
+.video-card:hover{border-color:var(--accent2);}
+.video-thumb{background:#0e0f13;height:48px;display:flex;align-items:center;padding:0 14px;gap:10px;border-bottom:1px solid var(--border);}
+.yt-icon{font-size:20px;}
+.v-subject{font-size:10px;font-weight:700;letter-spacing:1.5px;padding:2px 8px;border-radius:4px;background:var(--accent2);color:#fff;}
+.video-body{padding:12px 14px;display:flex;align-items:center;gap:10px;}
+.video-info{flex:1;}
+.video-title{font-size:13px;font-weight:600;margin-bottom:2px;}
+.video-meta{font-size:11px;color:var(--muted);}
+.watch-btn{padding:6px 14px;border-radius:7px;font-size:11px;font-weight:600;background:var(--accent2);color:#fff;border:none;cursor:pointer;text-decoration:none;transition:all .2s;display:inline-block;}
+.watch-btn:hover{background:#f0652a;}
+.vid-page-tabs{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto;scrollbar-width:none;flex-wrap:wrap;}
+.vpt{padding:6px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted);transition:all .2s;white-space:nowrap;}
+.vpt.active{background:var(--accent2);color:#fff;border-color:var(--accent2);}
+.saved-empty{text-align:center;padding:48px 20px;}
+.saved-empty .big-icon{font-size:56px;margin-bottom:14px;}
+.saved-empty h3{font-family:var(--serif);font-size:20px;font-weight:700;margin-bottom:8px;color:var(--accent);}
+.saved-empty p{font-size:13px;color:var(--muted);line-height:1.7;}
+.saved-note-card{background:var(--card);border:1px solid var(--border);border-radius:11px;padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:8px;}
+.saved-note-card:hover{border-color:var(--green);}
+.saved-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;background:#0e3a1c;color:var(--green);border:1px solid var(--green);margin-bottom:4px;}
+.pdf-overlay{position:fixed;inset:0;z-index:300;background:var(--bg);display:none;flex-direction:column;}
+.pdf-overlay.open{display:flex;}
+.pdf-viewer-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;align-items:center;gap:10px;}
+.pdf-title{font-size:13px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pdf-close-btn{padding:6px 14px;border-radius:8px;background:var(--accent2);color:#fff;border:none;cursor:pointer;font-size:12px;font-weight:600;}
+.pdf-save-bar-btn{padding:6px 14px;border-radius:8px;background:var(--green);color:#052e16;border:none;cursor:pointer;font-size:12px;font-weight:700;}
+.pdf-save-bar-btn.saved-bar{background:#0e3a1c;color:var(--green);border:1px solid var(--green);}
+.pdf-frame{flex:1;border:none;width:100%;background:#fff;}
+.pdf-no-embed{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;}
+.pdf-no-embed p{font-size:13px;color:var(--muted);line-height:1.7;}
+.open-drive-btn{padding:10px 24px;border-radius:10px;background:var(--blue);color:#fff;border:none;cursor:pointer;font-size:14px;font-weight:700;text-decoration:none;display:inline-block;}
+.planner-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
+.planner-stat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;}
+.ps-val{font-family:var(--serif);font-size:32px;font-weight:900;color:var(--accent);line-height:1;}
+.ps-label{font-size:11px;color:var(--muted);margin-top:4px;letter-spacing:.5px;}
+.exam-card{background:linear-gradient(135deg,#1c1f29,#16181f);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:14px;}
+.exam-card h3{font-family:var(--serif);font-size:18px;font-weight:700;color:var(--accent);margin-bottom:10px;}
+.exam-form{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+.exam-input{flex:1;min-width:140px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:var(--sans);font-size:13px;outline:none;}
+.exam-input:focus{border-color:var(--accent);}
+.exam-btn{padding:8px 16px;background:var(--accent);color:#0e0f13;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-family:var(--sans);font-size:13px;}
+.exams-list{display:flex;flex-direction:column;gap:6px;}
+.exam-item{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;}
+.exam-name{font-size:13px;font-weight:600;}
+.exam-days{font-size:12px;font-weight:700;padding:3px 10px;border-radius:6px;}
+.exam-days.urgent{background:#3a0e0e;color:#e85d38;}
+.exam-days.soon{background:#3a2a0e;color:#e8a838;}
+.exam-days.ok{background:#0e3a1c;color:#38c49a;}
+.goals-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;}
+.goals-card h3{font-size:15px;font-weight:700;margin-bottom:12px;}
+.goal-form{display:flex;gap:8px;margin-bottom:10px;}
+.goal-input{flex:1;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:var(--sans);font-size:13px;outline:none;}
+.goal-input:focus{border-color:var(--accent);}
+.goal-add{padding:8px 14px;background:var(--accent);color:#0e0f13;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-size:13px;}
+.goal-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);}
+.goal-item:last-child{border-bottom:none;}
+.goal-cb{width:18px;height:18px;border-radius:5px;border:2px solid var(--border);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .2s;}
+.goal-cb.done{background:var(--green);border-color:var(--green);}
+.goal-text{font-size:13px;flex:1;}
+.goal-text.done{text-decoration:line-through;color:var(--muted);}
+.goal-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0 4px;}
+.planner-day{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:8px 12px;display:flex;align-items:center;justify-content:space-between;font-size:12px;}
+.study-log{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;}
+.study-log h3{font-size:15px;font-weight:700;margin-bottom:12px;}
+.log-form{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;}
+.log-form label{font-size:12px;color:var(--muted);}
+.log-hrs{width:70px;padding:7px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--sans);font-size:14px;font-weight:700;outline:none;text-align:center;}
+.log-btn{padding:7px 14px;background:var(--green);color:#052e16;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:12px;}
+.lb-info-box{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px;font-size:13px;color:var(--muted);line-height:1.6;}
+.lb-info-box strong{color:var(--accent);}
+.lb-entry-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;}
+.lb-entry-card h3{font-size:15px;font-weight:700;margin-bottom:12px;}
+.lb-form{display:flex;flex-direction:column;gap:8px;}
+.lb-input{padding:9px 12px;background:var(--surface);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:var(--sans);font-size:13px;outline:none;}
+.lb-input:focus{border-color:var(--accent);}
+.lb-submit{padding:10px;background:var(--accent);color:#0e0f13;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-size:14px;}
+.lb-list{display:flex;flex-direction:column;gap:8px;}
+.lb-item{background:var(--card);border:1px solid var(--border);border-radius:11px;padding:12px 14px;display:flex;align-items:center;gap:12px;}
+.lb-rank{font-family:var(--serif);font-size:22px;font-weight:900;width:32px;text-align:center;flex-shrink:0;}
+.lb-rank.gold{color:#ffd700;}.lb-rank.silver{color:#c0c0c0;}.lb-rank.bronze{color:#cd7f32;}
+.lb-info2{flex:1;}
+.lb-name{font-size:14px;font-weight:600;margin-bottom:2px;}
+.lb-score-row{display:flex;gap:8px;flex-wrap:wrap;}
+.lb-badge{font-size:10px;padding:2px 8px;border-radius:4px;background:var(--surface);color:var(--muted);border:1px solid var(--border);}
+.lb-total{font-family:var(--serif);font-size:20px;font-weight:900;color:var(--accent);}
+.about-hero{background:linear-gradient(135deg,#1c1f29,#16181f);border:1px solid var(--border);border-radius:18px;padding:24px;margin-bottom:16px;text-align:center;}
+.about-avatar{width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 14px;border:3px solid var(--border);}
+.about-name{font-family:var(--serif);font-size:24px;font-weight:900;margin-bottom:4px;}
+.about-role{font-size:12px;color:var(--muted);margin-bottom:14px;}
+.about-badges{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;}
+.badge{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid var(--border);background:var(--surface);color:var(--muted);}
+.about-story{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:12px;}
+.about-story h3{font-family:var(--serif);font-size:17px;font-weight:700;margin-bottom:10px;color:var(--accent);}
+.about-story p{font-size:13px;color:#a0a8b8;line-height:1.8;margin-bottom:8px;}
+.contact-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;align-items:center;justify-content:space-between;}
+.contact-info h4{font-size:13px;font-weight:600;margin-bottom:2px;}.contact-info p{font-size:11px;color:var(--muted);}
+.insta-btn{padding:7px 16px;border-radius:9px;background:linear-gradient(135deg,#e1306c,#f77737);color:#fff;font-size:12px;font-weight:600;text-decoration:none;}
+.fb-banner{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:8px;font-size:12px;}
+.fb-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.fb-dot.online{background:var(--green);box-shadow:0 0 6px var(--green);}
+.fb-dot.local{background:var(--accent);}
+.modal-overlay{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.85);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;padding:16px;}
+.modal-overlay.open{display:flex!important;}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:18px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;padding:22px;}
+.modal h2{font-family:var(--serif);font-size:20px;font-weight:900;margin-bottom:3px;}
+.modal-sub{font-size:12px;color:var(--muted);margin-bottom:18px;}
+.modal-close{float:right;background:var(--card);border:1px solid var(--border);color:var(--text);width:28px;height:28px;border-radius:7px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;}
+.form-group{margin-bottom:12px;}
+.form-group label{display:block;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:5px;letter-spacing:.5px;}
+.form-group input,.form-group select,.form-group textarea{width:100%;padding:9px 11px;background:var(--card);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:var(--sans);font-size:13px;outline:none;transition:border-color .2s;}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--accent);}
+.form-group textarea{resize:vertical;min-height:60px;}
+.form-group select option{background:var(--card);}
+.admin-tabs{display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap;}
+.atab{flex:1;padding:7px 4px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--muted);transition:all .2s;text-align:center;white-space:nowrap;}
+.atab.active{background:var(--accent);color:#0e0f13;border-color:var(--accent);}
+.aform{display:none;}.aform.active{display:block;}
+.submit-btn{width:100%;padding:11px;background:var(--accent);color:#0e0f13;border:none;border-radius:9px;font-family:var(--sans);font-size:14px;font-weight:700;cursor:pointer;margin-bottom:8px;}
+.submit-btn:hover{background:#f0b848;}
+.success-msg{background:#0d2018;border:1px solid var(--green);color:var(--green);border-radius:9px;padding:9px 12px;font-size:12px;font-weight:600;text-align:center;display:none;margin-top:8px;}
+.login-box{text-align:center;}.login-err{color:#e85d38;font-size:12px;margin-top:6px;display:none;}
+.manage-list{display:flex;flex-direction:column;gap:6px;margin-top:6px;}
+.manage-item{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:9px 11px;display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.mi-title{font-size:12px;font-weight:600;}.mi-sub{font-size:10px;color:var(--muted);}
+.del-btn{background:#2a0e0e;border:1px solid #5a1e1e;color:#e85d38;padding:3px 9px;border-radius:5px;font-size:11px;cursor:pointer;font-weight:600;flex-shrink:0;}
+.del-btn:hover{background:#e85d38;color:#fff;}
+.section-label{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:1px;margin:14px 0 6px;text-transform:uppercase;}
+.struct-item{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:9px 12px;display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+.struct-name{font-size:13px;font-weight:600;flex:1;}
+.struct-actions{display:flex;gap:5px;}
+.edit-btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:3px 9px;border-radius:5px;font-size:11px;cursor:pointer;font-weight:600;}
+.edit-btn:hover{border-color:var(--accent);color:var(--accent);}
+.add-inline{display:flex;gap:7px;margin-top:8px;}
+.add-inline input{flex:1;padding:8px 11px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--sans);font-size:13px;outline:none;}
+.add-inline input:focus{border-color:var(--accent);}
+.add-inline button{padding:8px 14px;background:var(--accent);color:#0e0f13;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:12px;white-space:nowrap;}
+
+.saved-video-card{background:var(--card);border:1px solid var(--border);border-radius:11px;padding:14px;display:flex;align-items:center;gap:12px;margin-bottom:8px;}
+.saved-video-card:hover{border-color:var(--accent2);}
+.saved-video-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;background:#1a0e0e;color:var(--accent2);border:1px solid var(--accent2);margin-bottom:4px;}
+.saved-section-title{font-size:13px;font-weight:700;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin:16px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+
+
+/* Secret admin tap */
+.secret-hint{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--accent);color:#0e0f13;padding:6px 16px;border-radius:20px;font-size:12px;font-weight:700;opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:999;}
+.secret-hint.show{opacity:1;}
+
+.empty-state{text-align:center;padding:36px 20px;color:var(--muted);font-size:13px;}
+
+
+/* VIDEO PLAYER OVERLAY */
+.video-overlay{position:fixed;inset:0;z-index:300;background:#000;display:none;flex-direction:column;}
+.video-overlay.open{display:flex;}
+.video-viewer-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;align-items:center;gap:10px;}
+.video-viewer-bar .pdf-title{font-size:13px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.video-close-btn{padding:6px 14px;border-radius:8px;background:var(--accent2);color:#fff;border:none;cursor:pointer;font-size:12px;font-weight:600;flex-shrink:0;}
+.video-frame-wrap{flex:1;position:relative;background:#000;}
+.video-frame-wrap iframe{position:absolute;inset:0;width:100%;height:100%;border:none;}
+
+
+.video-fallback{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center;background:#000;}
+.video-fallback .yt-big{font-size:64px;}
+.video-fallback h3{font-size:18px;font-weight:700;color:#fff;}
+.video-fallback p{font-size:13px;color:#aaa;line-height:1.7;max-width:280px;}
+.yt-open-btn{padding:12px 28px;border-radius:10px;background:#FF0000;color:#fff;border:none;cursor:pointer;font-size:15px;font-weight:700;font-family:var(--sans);text-decoration:none;display:inline-block;}
+.yt-open-btn:hover{background:#cc0000;}
+
+/* ── OFFLINE BANNER ── */
+/* ── PROFILE ── */
+.profile-avatar-btn{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));border:2px solid var(--border);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:#0e0f13;flex-shrink:0;}
+.profile-modal-overlay{position:fixed;inset:0;z-index:250;background:rgba(0,0,0,.85);backdrop-filter:blur(4px);display:none;align-items:flex-start;justify-content:flex-end;padding:60px 12px 0;}
+.profile-modal-overlay.open{display:flex;}
+.profile-modal{background:var(--surface);border:1px solid var(--border);border-radius:18px;width:280px;padding:20px;}
+.profile-avatar-big{width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:900;color:#0e0f13;margin:0 auto 12px;}
+.profile-name-display{font-family:var(--serif);font-size:18px;font-weight:700;text-align:center;margin-bottom:2px;}
+.profile-course-display{font-size:12px;color:var(--muted);text-align:center;margin-bottom:16px;}
+.profile-edit-btn{width:100%;padding:9px;background:var(--accent);color:#0e0f13;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-size:13px;font-family:var(--sans);margin-bottom:6px;}
+.profile-close-btn{width:100%;padding:8px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:9px;font-size:12px;cursor:pointer;font-family:var(--sans);}
+/* ── PWA INSTALL CARD ── */
+.pwa-install-card{background:linear-gradient(135deg,#1c1f29,#16181f);border:1px solid var(--accent);border-radius:14px;padding:18px;margin-bottom:14px;}
+.pwa-install-card h3{font-size:15px;font-weight:700;margin-bottom:6px;color:var(--accent);}
+.pwa-big-install-btn{width:100%;padding:12px;background:var(--accent);color:#0e0f13;border:none;border-radius:10px;font-weight:700;cursor:pointer;font-size:15px;font-family:var(--sans);}
+.pwa-big-install-btn:disabled{background:var(--green);color:#052e16;cursor:default;}
+.pwa-manual-steps{display:none;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:10px;font-size:12px;color:var(--muted);line-height:2.1;}
+.pwa-manual-steps.show{display:block;}
+/* ── PDF DISGUISE ── */
+.pdf-loading{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:var(--bg);}
+.pdf-loading-spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* ── OFFLINE BANNER ── */
+.offline-banner{background:#2a0e0e;border:1px solid #e85d38;border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:8px;font-size:12px;color:#e85d38;font-weight:600;}
+.online-restored{background:#0e2a1a;border-color:var(--green);color:var(--green);}
+#offline-toast{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:600;min-width:220px;text-align:center;display:none;border-radius:10px;padding:9px 18px;font-size:12px;font-weight:700;}
+#offline-toast.show{display:block;}
+
+/* ── NOTIFICATIONS ── */
+.notif-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:12px;}
+.notif-card h3{font-size:15px;font-weight:700;margin-bottom:12px;}
+.notif-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
+.notif-time{padding:8px 11px;background:var(--surface);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:var(--sans);font-size:14px;font-weight:700;outline:none;}
+.notif-toggle{position:relative;width:44px;height:24px;flex-shrink:0;}
+.notif-toggle input{opacity:0;width:0;height:0;}
+.notif-slider{position:absolute;inset:0;background:var(--dim);border-radius:24px;cursor:pointer;transition:.3s;}
+.notif-slider:before{content:'';position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.3s;}
+.notif-toggle input:checked+.notif-slider{background:var(--green);}
+.notif-toggle input:checked+.notif-slider:before{transform:translateX(20px);}
+.notif-list{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
+.notif-item{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:9px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;}
+
+/* ── QUICK NOTES ── */
+.qn-toolbar{display:flex;gap:8px;margin-bottom:14px;align-items:center;}
+.qn-new-btn{padding:9px 16px;background:var(--accent);color:#0e0f13;border:none;border-radius:10px;font-weight:700;cursor:pointer;font-size:13px;font-family:var(--sans);white-space:nowrap;}
+.qn-editor-box{background:var(--card);border:1px solid var(--accent);border-radius:14px;overflow:hidden;margin-bottom:14px;}
+.qn-title-input{width:100%;padding:14px 16px 8px;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-family:var(--serif);font-size:18px;font-weight:700;outline:none;}
+.qn-title-input::placeholder{color:var(--muted);}
+.qn-body-input{width:100%;min-height:180px;padding:12px 16px;background:transparent;border:none;color:var(--text);font-family:var(--sans);font-size:13px;line-height:1.8;outline:none;resize:vertical;}
+.qn-body-input::placeholder{color:var(--muted);}
+.qn-editor-bar{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-top:1px solid var(--border);background:var(--surface);}
+.qn-del-btn{background:#2a0e0e;border:1px solid #5a1e1e;color:#e85d38;padding:5px 12px;border-radius:7px;font-size:12px;cursor:pointer;font-weight:600;}
+.qn-done-btn{padding:6px 14px;background:var(--green);color:#052e16;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;}
+.qn-card{background:var(--card);border:1px solid var(--border);border-radius:11px;padding:14px 16px;margin-bottom:8px;cursor:pointer;transition:all .2s;}
+.qn-card:hover{border-color:var(--accent);transform:translateY(-1px);}
+.qn-card-title{font-size:14px;font-weight:700;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.qn-card-preview{font-size:12px;color:var(--muted);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.qn-card-date{font-size:10px;color:var(--dim);margin-top:6px;}
+
+/* ── PROGRESS TRACKER ── */
+.prog-summary{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px;}
+.prog-stat{background:var(--card);border:1px solid var(--border);border-radius:11px;padding:12px;text-align:center;}
+.prog-stat-val{font-family:var(--serif);font-size:24px;font-weight:900;color:var(--accent);}
+.prog-stat-label{font-size:10px;color:var(--muted);margin-top:2px;}
+.prog-subject-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px;}
+.prog-subj-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.prog-subj-name{font-size:14px;font-weight:700;}
+.prog-pct{font-size:12px;font-weight:700;color:var(--accent);}
+.prog-bar-wrap{height:6px;background:var(--border);border-radius:3px;margin-bottom:10px;overflow:hidden;}
+.prog-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--green));border-radius:3px;transition:width .5s;}
+.prog-topics{display:flex;flex-direction:column;gap:5px;}
+.prog-topic-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);}
+.prog-topic-row:last-child{border-bottom:none;}
+.prog-cb{width:16px;height:16px;border-radius:4px;border:2px solid var(--border);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;transition:all .2s;}
+.prog-cb.done{background:var(--green);border-color:var(--green);}
+.prog-topic-name{font-size:12px;flex:1;}
+.prog-topic-name.done{text-decoration:line-through;color:var(--muted);}
+.prog-add-row{display:flex;gap:6px;margin-top:8px;}
+.prog-add-inp{flex:1;padding:7px 10px;background:var(--surface);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:var(--sans);font-size:12px;outline:none;}
+.prog-add-inp:focus{border-color:var(--accent);}
+.prog-add-btn{padding:7px 12px;background:var(--accent);color:#0e0f13;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;}
+
+/* ── BATCH CHAT ── */
+.chat-name-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;text-align:center;max-width:320px;margin:20px auto;}
+.batch-chat-header{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:600;}
+.batch-msgs{background:var(--card);border:1px solid var(--border);border-radius:12px;height:380px;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;margin-bottom:10px;scrollbar-width:thin;scrollbar-color:var(--dim) transparent;}
+.batch-msg{display:flex;flex-direction:column;max-width:80%;}
+.batch-msg.mine{align-self:flex-end;align-items:flex-end;}
+.batch-msg.theirs{align-self:flex-start;}
+.batch-msg-name{font-size:10px;font-weight:700;color:var(--accent);margin-bottom:2px;}
+.batch-msg.mine .batch-msg-name{color:var(--blue);}
+.batch-msg-bubble{padding:8px 12px;border-radius:11px;font-size:13px;line-height:1.55;}
+.batch-msg.theirs .batch-msg-bubble{background:var(--surface);border:1px solid var(--border);border-top-left-radius:3px;}
+.batch-msg.mine .batch-msg-bubble{background:var(--blue);color:#fff;border-top-right-radius:3px;}
+.batch-msg-time{font-size:10px;color:var(--muted);margin-top:2px;}
+.batch-input-row{display:flex;gap:8px;}
+
+.pwa-banner{position:fixed;bottom:0;left:0;right:0;z-index:500;background:linear-gradient(135deg,#1c1f29,#16181f);border-top:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;gap:12px;transform:translateY(100%);transition:transform 0.4s ease;box-shadow:0 -4px 24px rgba(0,0,0,0.4);}
+.pwa-banner.show{transform:translateY(0);}
+.pwa-banner-icon{font-size:28px;flex-shrink:0;}
+.pwa-banner-text{flex:1;}
+.pwa-banner-title{font-size:13px;font-weight:700;margin-bottom:2px;}
+.pwa-banner-sub{font-size:11px;color:var(--muted);}
+.pwa-install-btn{padding:8px 16px;background:var(--accent);color:#0e0f13;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-size:12px;white-space:nowrap;font-family:var(--sans);}
+.pwa-dismiss-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:4px;}
+</style>
+
+  <!-- Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-0CT6SZ4DD1"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-0CT6SZ4DD1');
+  </script>
+  <!-- Fonts load async — never blocks offline use -->
+  <script>
+    if(navigator.onLine){
+      var fl=document.createElement('link');
+      fl.rel='stylesheet';fl.media='print';
+      fl.href='https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,600;0,900;1,300&family=DM+Sans:wght@300;400;500;600&display=swap';
+      fl.onload=function(){fl.media='all';};
+      document.head.appendChild(fl);
+    }
+  </script>
+
+  <!-- PWA Support -->
+  <link rel="manifest" href="#" id="pwa-manifest-link">
+  <meta name="theme-color" content="#e8a838">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MediStudy">
+  <link rel="apple-touch-icon" href="https://img.icons8.com/fluency/96/stethoscope.png">
+</head>
+<body>
+<nav>
+  <div class="nav-brand" id="nav-brand" onclick="goPage('home')">Medi<span>Study</span></div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="goPage('home')">🏠</button>
+    <button class="nav-tab" onclick="goPage('search')">🔍</button>
+    <button class="nav-tab" onclick="goPage('tutor')">🤖 AI</button>
+    <button class="nav-tab" onclick="goPage('material')">📚</button>
+    <button class="nav-tab" onclick="goPage('videos')">🎥</button>
+    <button class="nav-tab" onclick="goPage('saved')">💾</button>
+    <button class="nav-tab" onclick="goPage('planner')">📅</button>
+    <button class="nav-tab" onclick="goPage('leaderboard')">🏆</button>
+    <button class="nav-tab" onclick="goPage('quicknotes')">📝</button>
+    <button class="nav-tab" onclick="goPage('progress')">📊</button>
+    <button class="nav-tab" onclick="goPage('chat')">💬</button>
+    <button class="nav-tab" onclick="goPage('about')">👤</button>  </div>
+  <div class="nav-right">
+    <button class="theme-btn" id="theme-btn" onclick="toggleTheme()">🌙</button>
+    <button class="profile-avatar-btn" id="profile-avatar-btn" onclick="openProfile()" title="My Profile">👤</button>
+  </div>
+</nav>
+
+<!-- PROFILE MODAL -->
+<div class="profile-modal-overlay" id="profile-modal-overlay" onclick="if(event.target===this)closeProfile()">
+  <div class="profile-modal">
+    <div class="profile-avatar-big" id="profile-avatar-big">👤</div>
+    <div class="profile-name-display" id="profile-name-display">Set your name</div>
+    <div class="profile-course-display" id="profile-course-display">Tap Edit to set up your profile</div>
+    <div id="profile-view">
+      <button class="profile-edit-btn" onclick="showProfileEdit()">✏️ Edit Profile</button>
+      <button class="profile-close-btn" onclick="closeProfile()">Close</button>
+    </div>
+    <div id="profile-edit-form" style="display:none;">
+      <div class="form-group" style="margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:5px;">YOUR NAME</label>
+        <input type="text" id="profile-name-inp" class="lb-input" placeholder="e.g. Ankit Sahu" style="margin-bottom:0;">
+      </div>
+      <div class="form-group" style="margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:5px;">COURSE</label>
+        <select id="profile-course-inp" class="lb-input" style="margin-bottom:0;">
+          <option value="">Select your course...</option>
+          <option value="1st Course">1st Course</option>
+          <option value="2nd Course">2nd Course</option>
+          <option value="3rd Course">3rd Course</option>
+          <option value="4th Course">4th Course</option>
+          <option value="5th Course">5th Course</option>
+          <option value="6th Course">6th Course</option>
+        </select>
+      </div>
+      <button class="profile-edit-btn" onclick="saveProfile()">💾 Save Profile</button>
+      <button class="profile-close-btn" onclick="showProfileView()">Cancel</button>
+    </div>
+  </div>
+</div>
+<!-- HOME -->
+<div class="page active" id="page-home">
+  <div class="hero"><div class="hero-tag">MBBS COMPANION</div><h1>Study smarter,<br><em>not harder.</em></h1><p>Your all-in-one study app — built by an MBBS student, for MBBS students.</p></div>
+  <div id="home-fb-banner"></div>
+  <div class="home-grid">
+    <div class="home-card" onclick="goPage('search')"><span class="hc-icon">🔍</span><div class="hc-title">Search</div><div class="hc-desc">Find any note or video instantly</div><div class="hc-arrow">→</div></div>
+    <div class="home-card" onclick="goPage('tutor')"><span class="hc-icon">🧠</span><div class="hc-title">AI Tutor</div><div class="hc-desc">Ask any MBBS question</div><div class="hc-arrow">→</div></div>
+    <div class="home-card" onclick="goPage('material')"><span class="hc-icon">📚</span><div class="hc-title">Study Material</div><div class="hc-desc">Notes & videos by course and subject</div><div class="hc-arrow">→</div></div>
+    <div class="home-card" onclick="goPage('videos')"><span class="hc-icon">🎥</span><div class="hc-title">Videos</div><div class="hc-desc">All video lectures in one place</div><div class="hc-arrow">→</div></div>
+    <div class="home-card" onclick="goPage('quicknotes')"><span class="hc-icon">📝</span><div class="hc-title">Quick Notes</div><div class="hc-desc">Write your personal study notes</div><div class="hc-arrow">→</div></div>
+    <div class="home-card" onclick="goPage('progress')"><span class="hc-icon">📊</span><div class="hc-title">Progress</div><div class="hc-desc">Track topics done per subject</div><div class="hc-arrow">→</div></div>
+    <div class="home-card" onclick="goPage('chat')"><span class="hc-icon">💬</span><div class="hc-title">Batch Chat</div><div class="hc-desc">Chat with your batchmates live</div><div class="hc-arrow">→</div></div>
+    <div class="home-card" onclick="goPage('planner')"><span class="hc-icon">📅</span><div class="hc-title">Study Planner</div><div class="hc-desc">Exam countdown & daily goals</div><div class="hc-arrow">→</div></div>
+  </div>
+</div>
+<!-- SEARCH -->
+<div class="page" id="page-search">
+  <div class="sec-title">🔍 <em>Search</em></div><div class="sec-sub">Find notes and videos instantly</div>
+  <div class="search-wrap"><span class="search-icon">🔍</span><input class="search-input" id="search-input" placeholder="Search topics, notes, videos..." oninput="doSearch(this.value)"></div>
+  <div id="search-results"><div class="empty-state">Start typing to search...</div></div>
+</div>
+<!-- AI TUTOR -->
+<div class="page" id="page-tutor">
+  <div class="sec-title">🧠 <em>MediBot</em></div><div class="sec-sub">Your AI tutor for all MBBS subjects</div>
+  <div class="chat-box">
+    <div class="chat-msgs" id="chat-msgs">
+      <div class="chat-welcome" id="chat-welcome">
+        <h3>🧠 MediBot — MBBS Tutor</h3><p>Ask anything — Anatomy, Physiology, Surgery, Medicine & all MBBS subjects!</p>
+        <div class="quick-chips">
+          <div class="qchip" onclick="sendQ('Explain the cardiac cycle simply')">❤️ Cardiac Cycle</div>
+          <div class="qchip" onclick="sendQ('Give me 5 MCQs on Pharmacology')">💊 Pharmacology MCQs</div>
+          <div class="qchip" onclick="sendQ('Explain the brachial plexus simply')">🦾 Brachial Plexus</div>
+          <div class="qchip" onclick="sendQ('What is the approach to a fever patient?')">🌡️ Fever Approach</div>
+          <div class="qchip" onclick="sendQ('Explain types of hypersensitivity reactions')">🔬 Hypersensitivity</div>
+          <div class="qchip" onclick="sendQ('Give me 5 MCQs on Pathology')">🧫 Pathology MCQs</div>
+          <div class="qchip" onclick="sendQ('Explain stages of labour')">👶 Stages of Labour</div>
+          <div class="qchip" onclick="sendQ('Important Surgery topics for exam')">🔪 Surgery Topics</div>
+        </div>
+      </div>
+    </div>
+    <div class="chat-input-row">
+      <textarea class="chat-input" id="chat-input" rows="1" placeholder="Ask your question..." onkeydown="chatKey(event)"></textarea>
+      <button class="chat-send" id="chat-send" onclick="sendMsg()">➤</button>
+    </div>
+  </div>
+</div>
+<!-- STUDY MATERIAL -->
+<div class="page" id="page-material">
+  <div class="sec-title">📚 Study <em>Material</em></div><div class="sec-sub">Browse by course, subject and folder</div>
+  <div id="material-container"></div>
+</div>
+<!-- VIDEOS -->
+<div class="page" id="page-videos">
+  <div class="sec-title">🎥 Video <em>Lectures</em></div><div class="sec-sub">All video lectures in one place</div>
+  <div class="vid-page-tabs" id="vid-page-tabs"></div>
+  <div class="videos-list" id="videos-list"></div>
+</div>
+<!-- SAVED NOTES -->
+<div class="page" id="page-saved">
+  <div class="sec-title">💾 <em>Saved</em></div><div class="sec-sub">Your offline saved notes & videos</div>
+  <div id="saved-container"></div>
+</div>
+<!-- PLANNER -->
+<div class="page" id="page-planner">
+  <div class="sec-title">Study <em>Planner</em></div><div class="sec-sub">Exam countdown & daily goals</div>
+  <div class="planner-grid">
+    <div class="planner-stat"><div class="ps-val" id="ps-hours">0</div><div class="ps-label">HOURS TODAY</div></div>
+    <div class="planner-stat"><div class="ps-val" id="ps-goals">0/0</div><div class="ps-label">GOALS DONE</div></div>
+  </div>
+  <div class="study-log" style="margin-bottom:14px;">
+    <h3>⏱️ Log Today's Study Hours</h3>
+    <div class="log-form"><label>Hours:</label><input class="log-hrs" type="number" id="log-hrs" min="0" max="24" step="0.5" value="1"><button class="log-btn" onclick="logHours()">+ Log</button></div>
+    <div id="week-log"></div>
+  </div>
+  <div class="exam-card">
+    <h3>📆 Exam Countdown</h3>
+    <div class="exam-form">
+      <input class="exam-input" type="text" id="exam-name" placeholder="Exam name">
+      <input class="exam-input" type="date" id="exam-date">
+      <button class="exam-btn" onclick="addExam()">Add</button>
+    </div>
+    <div class="exams-list" id="exams-list"></div>
+  </div>
+  <div class="goals-card">
+    <h3>🎯 Today's Goals</h3>
+    <div class="goal-form"><input class="goal-input" type="text" id="goal-input" placeholder="Add a study goal..." onkeydown="if(event.key==='Enter')addGoal()"><button class="goal-add" onclick="addGoal()">Add</button></div>
+    <div id="goals-list"></div>
+  </div>
+  <!-- NOTIFICATIONS -->
+  <div class="notif-card">
+    <h3>🔔 Study Reminders</h3>
+    <div class="notif-row">
+      <label style="font-size:13px;font-weight:600;flex:1;">Daily Study Reminder</label>
+      <label class="notif-toggle"><input type="checkbox" id="notif-toggle" onchange="toggleNotification()"><span class="notif-slider"></span></label>
+    </div>
+    <div class="notif-row">
+      <label style="font-size:12px;color:var(--muted);">Remind me at:</label>
+      <input type="time" class="notif-time" id="notif-time" value="08:00" onchange="saveNotifTime()">
+    </div>
+    <div id="notif-status" style="font-size:12px;color:var(--muted);margin-top:4px;"></div>
+    <div class="notif-list" id="notif-list"></div>
+  </div>
+</div>
+<!-- LEADERBOARD -->
+<div class="page" id="page-leaderboard">
+  <div class="sec-title">🏆 <em>Leaderboard</em></div><div class="sec-sub">Who's studying the hardest?</div>
+  <div class="lb-info-box"><strong>Score</strong> = (Study Hours × 10) + (Topics Done × 5) + (Quiz Score × 1)</div>
+  <div class="lb-entry-card"><h3>📊 Enter Your Stats</h3><div class="lb-form">
+    <input class="lb-input" type="text" id="lb-name" placeholder="Your name">
+    <input class="lb-input" type="number" id="lb-hours" placeholder="Study hours today" min="0" max="24">
+    <input class="lb-input" type="number" id="lb-topics" placeholder="Topics completed today" min="0">
+    <input class="lb-input" type="number" id="lb-quiz" placeholder="Quiz score (0-100)" min="0" max="100">
+    <button class="lb-submit" onclick="submitLB()">Submit My Score 🏆</button>
+  </div></div>
+  <div class="lb-list" id="lb-list"></div>
+</div>
+<!-- ABOUT -->
+<div class="page" id="page-about">
+  <div class="about-hero">
+    <div class="about-avatar" id="about-avatar-display">👨‍⚕️</div>
+    <div class="about-name" id="about-name-display" onclick="secretTap()" style="cursor:default;user-select:none;">Ankit Lal Sahu</div>
+    <div class="about-role">MBBS Student · Ulyanovsk State University · Russia</div>
+    <div class="about-badges"><span class="badge">🎓 2nd Year MBBS</span><span class="badge">🇷🇺 Ulyanovsk</span><span class="badge">💻 App Developer</span></div>
+  </div>
+
+  <!-- PWA Install Card -->
+  <div class="pwa-install-card" id="pwa-install-section">
+    <h3>📱 Install MediStudy App</h3>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.7;">Install on your phone's home screen — works like a real app, opens faster, and saves notes work offline!</p>
+    <button class="pwa-big-install-btn" id="pwa-about-install-btn" onclick="installPWAFromAbout()">⬇️ Install App</button>
+    <div class="pwa-manual-steps" id="pwa-manual-steps"></div>
+  </div>
+
+  <div class="about-story">
+    <h3>Why I built MediStudy</h3>
+    <p>Hi! I'm Ankit Lal Sahu, a 2nd year MBBS student at Ulyanovsk State University in Russia. I built MediStudy to make studying easier for myself and my classmates — AI explanations, organized notes, and lecture videos all in one clean app.</p>
+    <p>If it helps even one student understand a topic better before an exam — it was worth building. 🩺</p>
+  </div>
+  <div class="contact-card">
+    <div class="contact-info"><h4>Connect with me</h4><p>@ankitsahu_58_ on Instagram</p></div>
+    <a class="insta-btn" href="https://instagram.com/ankitsahu_58_" target="_blank">📸 Instagram</a>
+  </div>
+</div>
+<!-- QUICK NOTES -->
+<div class="page" id="page-quicknotes">
+  <div class="sec-title">📝 Quick <em>Notes</em></div><div class="sec-sub">Your personal notes — type anything, saved instantly</div>
+  <div class="qn-toolbar">
+    <button class="qn-new-btn" onclick="newQNote()">+ New Note</button>
+    <input class="search-input" id="qn-search" placeholder="🔍 Search notes..." oninput="renderQNotes()" style="flex:1;padding:9px 14px;">
+  </div>
+  <div id="qn-editor" style="display:none;">
+    <div class="qn-editor-box">
+      <input class="qn-title-input" id="qn-title-input" placeholder="Note title...">
+      <textarea class="qn-body-input" id="qn-body-input" placeholder="Write your notes here..."></textarea>
+      <div class="qn-editor-bar">
+        <span id="qn-save-status" style="font-size:11px;color:var(--muted);">Auto-saved ✓</span>
+        <button class="qn-del-btn" id="qn-del-btn" onclick="deleteQNote()">🗑️ Delete</button>
+        <button class="qn-done-btn" onclick="closeQNEditor()">Done ✓</button>
+      </div>
+    </div>
+  </div>
+  <div id="qn-list"></div>
+</div>
+
+<!-- PROGRESS TRACKER -->
+<div class="page" id="page-progress">
+  <div class="sec-title">📊 <em>Progress</em></div><div class="sec-sub">Track topics done per subject</div>
+  <div class="prog-summary" id="prog-summary"></div>
+  <div id="prog-container"></div>
+</div>
+
+<!-- BATCH CHAT -->
+<div class="page" id="page-chat">
+  <div class="sec-title">💬 Batch <em>Chat</em></div><div class="sec-sub">Talk with your batchmates in real-time</div>
+  <div id="chat-name-setup" style="display:none;">
+    <div class="chat-name-card">
+      <div style="font-size:32px;margin-bottom:10px;">💬</div>
+      <h3 style="font-family:var(--serif);font-size:18px;font-weight:700;margin-bottom:6px;">Join Batch Chat</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px;">Enter your name to start chatting with batchmates</p>
+      <input class="lb-input" id="chat-username-input" placeholder="Your name..." style="margin-bottom:10px;" onkeydown="if(event.key==='Enter')setChatName()">
+      <button class="lb-submit" onclick="setChatName()">Join Chat 💬</button>
+    </div>
+  </div>
+  <div id="chat-offline-notice" style="display:none;">
+    <div class="offline-banner" style="margin-bottom:12px;">
+      <span>📡</span><span>Batch Chat requires internet connection & Firebase</span>
+    </div>
+  </div>
+  <div id="chat-loading" style="display:none;flex-direction:column;align-items:center;padding:40px;gap:12px;">
+    <div class="pdf-loading-spinner"></div>
+    <span style="font-size:13px;color:var(--muted);">Connecting to chat...</span>
+  </div>
+  <div id="batch-chat-box" style="display:none;">
+    <div class="batch-chat-header">
+      <span id="batch-chat-name-display"></span>
+      <button class="qn-del-btn" onclick="changeChatName()" style="font-size:11px;padding:4px 10px;">Change Name</button>
+    </div>
+    <div class="batch-msgs" id="batch-msgs"></div>
+    <div class="batch-input-row">
+      <input class="chat-input" id="batch-input" placeholder="Type a message..." onkeydown="if(event.key==='Enter')sendBatchMsg()" style="height:38px;resize:none;">
+      <button class="chat-send" onclick="sendBatchMsg()">➤</button>
+    </div>
+  </div>
+</div>
+
+<!-- PDF VIEWER -->
+<div class="pdf-overlay" id="pdf-overlay">
+  <div class="pdf-viewer-bar">
+    <button class="pdf-close-btn" onclick="closePDF()">✕ Close</button>
+    <span class="pdf-title" id="pdf-title"></span>
+    <button class="pdf-save-bar-btn" id="pdf-save-bar-btn" onclick="toggleSaveFromViewer()">💾 Save Offline</button>
+  </div>
+  <div class="pdf-loading" id="pdf-loading" style="display:none;">
+    <div class="pdf-loading-spinner"></div>
+    <span style="font-size:12px;color:var(--muted);">Opening document...</span>
+  </div>
+  <iframe class="pdf-frame" id="pdf-frame" allowfullscreen></iframe>
+  <div class="pdf-no-embed" id="pdf-no-embed" style="display:none;">
+    <div style="font-size:56px;">📄</div>
+    <h3 style="font-family:var(--serif);font-size:20px;font-weight:700;color:var(--accent);margin-bottom:8px;">Cannot Open</h3>
+    <p style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:20px;">This note cannot be displayed in offline mode.<br>Save it first while online to read offline.</p>
+    <button class="pdf-close-btn" onclick="closePDF()" style="font-size:14px;padding:10px 24px;">← Go Back</button>
+  </div>
+</div>
+<!-- ADMIN MODAL -->
+<div class="modal-overlay" id="admin-modal">
+  <div class="modal">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <h2>⚙️ Admin Panel</h2><button class="modal-close" onclick="closeAdmin()">✕</button>
+    </div>
+    <div id="admin-login">
+      <div class="modal-sub">Enter password to manage content</div>
+      <div class="login-box">
+        <div class="form-group"><label>PASSWORD</label><input type="password" id="admin-pw" placeholder="Enter password..." onkeydown="if(event.key==='Enter')checkPw()"></div>
+        <button class="submit-btn" onclick="checkPw()">Unlock Admin Panel 🔐</button>
+        <div class="login-err" id="login-err">❌ Wrong password.</div>
+      </div>
+    </div>
+    <div id="admin-panel" style="display:none;">
+      <div class="modal-sub">Manage your app content</div>
+      <div class="admin-tabs">
+        <div class="atab active" onclick="switchATab('structure',this)">🏗️ Structure</div>
+        <div class="atab" onclick="switchATab('notes',this)">📝 Note</div>
+        <div class="atab" onclick="switchATab('videos',this)">🎥 Video</div>
+        <div class="atab" onclick="switchATab('manage',this)">🗑️ Manage</div>
+        <div class="atab" onclick="switchATab('firebase',this)">🔥 Firebase</div>
+      </div>
+      <!-- STRUCTURE -->
+      <div class="aform active" id="aform-structure">
+        <div class="section-label">📘 Courses</div>
+        <div id="admin-courses-list"></div>
+        <div class="add-inline"><input type="text" id="new-course-name" placeholder="e.g. 1st Course"><button onclick="addCourse()">+ Add</button></div>
+        <div class="section-label" style="margin-top:18px;">🔬 Subjects</div>
+        <div class="form-group" style="margin-bottom:8px;"><label>SELECT COURSE</label><select id="struct-course-sel" onchange="renderAdminSubjects()"></select></div>
+        <div id="admin-subjects-list"></div>
+        <div class="add-inline"><input type="text" id="new-subject-name" placeholder="e.g. Anatomy"><button onclick="addSubject()">+ Add</button></div>
+        <div class="section-label" style="margin-top:18px;">📁 Folders <span style="font-weight:400;font-size:10px;color:var(--muted);">(inside a subject)</span></div>
+        <div class="form-group" style="margin-bottom:4px;"><label>SELECT COURSE</label><select id="struct-fcourse" onchange="updateFolderSubjects()"></select></div>
+        <div class="form-group" style="margin-bottom:8px;"><label>SELECT SUBJECT</label><select id="struct-fsubject" onchange="renderAdminFolders()"></select></div>
+        <div id="admin-folders-list"></div>
+        <div class="add-inline"><input type="text" id="new-folder-name" placeholder="e.g. Short Notes, Diagrams"><button onclick="addFolder()">+ Add</button></div>
+        <div class="success-msg" id="struct-success">✅ Saved!</div>
+      </div>
+      <!-- NOTE -->
+      <div class="aform" id="aform-notes">
+        <div class="form-group"><label>COURSE</label><select id="note-course" onchange="updateNoteSubjects()"></select></div>
+        <div class="form-group"><label>SUBJECT</label><select id="note-subject" onchange="updateNoteFolders()"></select></div>
+        <div class="form-group"><label>FOLDER</label><select id="note-folder"></select></div>
+        <div class="form-group"><label>TOPIC NAME</label><input type="text" id="note-topic" placeholder="e.g. Cardiac Cycle"></div>
+        <div class="form-group"><label>DESCRIPTION (optional)</label><textarea id="note-desc" placeholder="Short description..."></textarea></div>
+        <div class="form-group"><label>GOOGLE DRIVE LINK</label><input type="url" id="note-link" placeholder="https://drive.google.com/..."></div>
+        <button class="submit-btn" onclick="addNote()">➕ Add Note</button>
+        <div class="success-msg" id="note-success">✅ Note added!</div>
+      </div>
+      <!-- VIDEO -->
+      <div class="aform" id="aform-videos">
+        <div class="form-group"><label>COURSE</label><select id="vid-course" onchange="updateVidSubjects()"></select></div>
+        <div class="form-group"><label>SUBJECT</label><select id="vid-subject"></select></div>
+        <div class="form-group"><label>LECTURE TITLE</label><input type="text" id="vid-title" placeholder="e.g. Heart Sounds Explained"></div>
+        <div class="form-group"><label>DESCRIPTION (optional)</label><input type="text" id="vid-desc" placeholder="Short description..."></div>
+        <div class="form-group"><label>YOUTUBE LINK</label><input type="url" id="vid-link" placeholder="https://youtube.com/watch?v=..."></div>
+        <button class="submit-btn" onclick="addVideo()">➕ Add Video</button>
+        <div class="success-msg" id="vid-success">✅ Video added!</div>
+      </div>
+      <!-- MANAGE -->
+      <div class="aform" id="aform-manage">
+        <div class="section-label">Notes</div><div class="manage-list" id="manage-notes"></div>
+        <div class="section-label">Videos</div><div class="manage-list" id="manage-videos"></div>
+      </div>
+      <!-- FIREBASE -->
+      <div class="aform" id="aform-firebase">
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px;">🔥 Firebase Status</div>
+          <div id="fb-status-text" style="font-size:12px;color:var(--muted);line-height:1.7;"></div>
+        </div>
+        <div style="background:#0e1a2e;border:1px solid var(--blue);border-radius:10px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px;color:var(--blue);">🤖 AI Tutor Key (Groq)</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:8px;">Your Groq key is active! ✅ Free & fast.<br>Update it here if needed.</div>
+          <input type="text" id="gemini-key-input" placeholder="gsk_..." style="width:100%;padding:8px 11px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:monospace;font-size:12px;outline:none;margin-bottom:8px;">
+          <button onclick="saveGeminiKey()" style="width:100%;padding:9px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:13px;">💾 Update AI Key</button>
+          <div id="gemini-key-status" style="font-size:11px;margin-top:6px;color:var(--muted);"></div>
+        </div>
+        <div class="form-group"><label>FIREBASE API KEY</label><input type="text" id="fb-api-key" placeholder="AIzaSy..."></div>
+        <div class="form-group"><label>DATABASE URL</label><input type="url" id="fb-db-url" placeholder="https://your-app-default-rtdb.firebaseio.com"></div>
+        <div class="form-group"><label>PROJECT ID</label><input type="text" id="fb-project-id" placeholder="your-project-id"></div>
+        <button class="submit-btn" onclick="connectFirebase()" style="background:var(--blue);">🔥 Connect Firebase</button>
+        <button class="submit-btn" id="fb-push-btn" onclick="pushToFirebase()" style="background:var(--green);color:#052e16;">⬆️ Push My Data to Firebase</button>
+        <button class="submit-btn" id="fb-pull-btn" onclick="pullFromFirebase()" style="background:var(--purple);">⬇️ Pull Latest Data from Firebase</button>
+        <div class="success-msg" id="fb-success"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════ DATA ═══════════════
+let courses  = JSON.parse(localStorage.getItem('ms4_courses')  || '[]');
+let subjects = JSON.parse(localStorage.getItem('ms4_subjects') || '[]');
+let folders  = JSON.parse(localStorage.getItem('ms4_folders')  || '[]');
+let notes    = JSON.parse(localStorage.getItem('ms4_notes')    || '[]');
+let videos   = JSON.parse(localStorage.getItem('ms4_videos')   || '[]');
+let exams    = JSON.parse(localStorage.getItem('ms_exams')     || '[]');
+let goals    = JSON.parse(localStorage.getItem('ms_goals')     || '[]');
+let weekLog  = JSON.parse(localStorage.getItem('ms_weeklog')   || '{}');
+let lbData   = JSON.parse(localStorage.getItem('ms_lb')        || '[]');
+let savedNotes  = JSON.parse(localStorage.getItem('ms4_saved')   || '[]');
+let savedVideos = JSON.parse(localStorage.getItem('ms4_savedvids') || '[]');
+let fbConfig = JSON.parse(localStorage.getItem('ms4_fbconfig') || 'null');
+let fbConnected=false, db=null, adminUnlocked=false;
+let chatHistory=[], chatLoading=false, currentPDF=null;
+const PASS_HASH='226a0d3bb5dd67d71cd7158a8615bdef9c13dc01123137396dc94c038b0bbd57';
+const COURSE_ICONS=['📘','📗','📙','📕','📓','📔'];
+const FOLDER_ICONS=['📁','📝','⚡','💡','📌','🗒️','📊','🔖'];
+
+if(!courses.length){
+  courses=[{id:'c1',name:'1st Course'},{id:'c2',name:'2nd Course'},{id:'c3',name:'3rd Course'}];
+  saveLocal();
+}
+function uid(){return '_'+Math.random().toString(36).slice(2,9);}
+function saveLocal(){
+  localStorage.setItem('ms4_courses',JSON.stringify(courses));
+  localStorage.setItem('ms4_subjects',JSON.stringify(subjects));
+  localStorage.setItem('ms4_folders',JSON.stringify(folders));
+  localStorage.setItem('ms4_notes',JSON.stringify(notes));
+  localStorage.setItem('ms4_videos',JSON.stringify(videos));
+}
+function saveSaved(){localStorage.setItem('ms4_saved',JSON.stringify(savedNotes));}
+function saveSavedVideos(){localStorage.setItem('ms4_savedvids',JSON.stringify(savedVideos));}
+function isVideoSaved(id){return savedVideos.some(s=>s.id===id);}
+function toggleSaveVideo(video){
+  const idx=savedVideos.findIndex(s=>s.id===video.id);
+  if(idx>=0)savedVideos.splice(idx,1);
+  else savedVideos.push({...video,savedAt:Date.now()});
+  saveSavedVideos();
+  if(document.getElementById('page-saved').classList.contains('active'))renderSaved();
+}
+
+// ═══════════════ FIREBASE ═══════════════
+function loadFirebaseSDK(cb){
+  if(window.firebase){cb();return;}
+  const s=document.createElement('script');
+  s.src='https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js';
+  s.onload=()=>{const s2=document.createElement('script');s2.src='https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js';s2.onload=cb;document.head.appendChild(s2);};
+  document.head.appendChild(s);
+}
+function connectFirebase(){
+  const apiKey=document.getElementById('fb-api-key').value.trim();
+  const databaseURL=document.getElementById('fb-db-url').value.trim();
+  const projectId=document.getElementById('fb-project-id').value.trim();
+  if(!apiKey||!databaseURL||!projectId){alert('Fill all Firebase fields!');return;}
+  fbConfig={apiKey,databaseURL,projectId,authDomain:`${projectId}.firebaseapp.com`};
+  localStorage.setItem('ms4_fbconfig',JSON.stringify(fbConfig));
+  initFirebase(()=>{flashSuccess('fb-success','✅ Firebase connected!');updateFBStatus();updateHomeBanner();});
+}
+function initFirebase(cb){
+  if(!fbConfig){updateFBStatus();return;}
+  loadFirebaseSDK(()=>{
+    try{
+      if(!firebase.apps.length)firebase.initializeApp(fbConfig);
+      db=firebase.database();fbConnected=true;
+      if(cb)cb();
+    }catch(e){fbConnected=false;console.error(e);}
+    updateFBStatus();updateHomeBanner();
+  });
+}
+function pushToFirebase(){
+  if(!fbConnected||!db){alert('Connect Firebase first!');return;}
+  db.ref('medistudy').set({courses,subjects,folders,notes,videos,updatedAt:Date.now()})
+    .then(()=>flashSuccess('fb-success','✅ Pushed! Friends can now pull.'))
+    .catch(e=>alert('Push failed: '+e.message));
+}
+function pullFromFirebase(){
+  if(!fbConnected||!db){alert('Connect Firebase first!');return;}
+  db.ref('medistudy').once('value').then(snap=>{
+    const d=snap.val();if(!d){alert('No data on Firebase yet.');return;}
+    courses=d.courses||courses;subjects=d.subjects||subjects;folders=d.folders||folders;notes=d.notes||notes;videos=d.videos||videos;
+    saveLocal();flashSuccess('fb-success','✅ Pulled from Firebase!');renderMaterial();
+  }).catch(e=>alert('Pull failed: '+e.message));
+}
+function updateFBStatus(){
+  const el=document.getElementById('fb-status-text');if(!el)return;
+  if(fbConnected)el.innerHTML=`<span style="color:var(--green)">✅ Connected! Project: <strong>${fbConfig.projectId}</strong></span><br>Push your data so friends can see it. Pull to get the latest from Firebase.`;
+  else if(fbConfig)el.innerHTML=`<span style="color:var(--accent)">⚠️ Config saved, not connected. Reload app to reconnect.</span>`;
+  else el.innerHTML=`<span style="color:#e85d38">❌ Not connected.</span> Enter Firebase config below to share notes with friends.`;
+}
+function updateHomeBanner(){
+  const el=document.getElementById('home-fb-banner');if(!el)return;
+  el.innerHTML=fbConnected
+    ?`<div class="fb-banner"><div class="fb-dot online"></div><span style="color:var(--green);font-weight:600;">Live</span> — Connected to Firebase. Notes sync across all devices.</div>`
+    :`<div class="fb-banner"><div class="fb-dot local"></div><span>Local mode</span> — <span style="color:var(--muted);">Notes only on this device. <span style="color:var(--accent);cursor:pointer" onclick="openAdmin()">Connect Firebase →</span></span></div>`;
+}
+
+// ═══════════════ THEME ═══════════════
+let isDark=localStorage.getItem('ms_theme')!=='light';
+function applyTheme(){document.body.classList.toggle('light',!isDark);document.getElementById('theme-btn').textContent=isDark?'🌙':'☀️';}
+function toggleTheme(){isDark=!isDark;localStorage.setItem('ms_theme',isDark?'dark':'light');applyTheme();}
+applyTheme();
+
+// ═══════════════ NAVIGATION ═══════════════
+function goPage(id){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  const map={home:0,search:1,tutor:2,material:3,videos:4,saved:5,planner:6,leaderboard:7,quicknotes:8,progress:9,chat:10,about:11};
+  if(map[id]!==undefined)document.querySelectorAll('.nav-tab')[map[id]].classList.add('active');
+  if(id==='material'){smView={level:'courses'};renderMaterial();}
+  if(id==='videos')renderVideosPage();
+  if(id==='saved')renderSaved();
+  if(id==='planner')renderPlanner();
+  if(id==='leaderboard')renderLB();
+  if(id==='search')document.getElementById('search-input').focus();
+  if(id==='quicknotes')renderQNotes();
+  if(id==='progress')renderProgress();
+  if(id==='chat')initBatchChat();
+}
+
+// ═══════════════ SEARCH ═══════════════
+function doSearch(q){
+  const res=document.getElementById('search-results');
+  q=q.trim().toLowerCase();
+  if(!q){res.innerHTML='<div class="empty-state">Start typing to search...</div>';return;}
+  const results=[];
+  notes.forEach(n=>{
+    const co=courses.find(x=>x.id===n.courseId),su=subjects.find(x=>x.id===n.subjectId),fo=folders.find(x=>x.id===n.folderId);
+    if(n.topic.toLowerCase().includes(q)||(n.desc||'').toLowerCase().includes(q)||(su&&su.name.toLowerCase().includes(q)))
+      results.push({type:'NOTE',icon:'🗂️',title:n.topic,sub:[co&&co.name,su&&su.name,fo&&fo.name].filter(Boolean).join(' › '),action:()=>openPDF(n)});
+  });
+  videos.forEach(v=>{
+    const co=courses.find(x=>x.id===v.courseId),su=subjects.find(x=>x.id===v.subjectId);
+    if(v.title.toLowerCase().includes(q)||(v.desc||'').toLowerCase().includes(q)||(su&&su.name.toLowerCase().includes(q)))
+      results.push({type:'VIDEO',icon:'🎥',title:v.title,sub:[co&&co.name,su&&su.name].filter(Boolean).join(' › '),action:()=>window.open(v.link,'_blank')});
+  });
+  if(!results.length){res.innerHTML='<div class="empty-state">No results for "'+q+'"</div>';return;}
+  res.innerHTML='';
+  results.forEach(r=>{
+    const d=document.createElement('div');d.className='sr-item';
+    d.innerHTML=`<span style="font-size:20px">${r.icon}</span><div style="flex:1"><div class="sr-title">${r.title}</div><div class="sr-sub">${r.sub}</div></div><span class="sr-type">${r.type}</span>`;
+    d.addEventListener('click',r.action);res.appendChild(d);
+  });
+}
+
+// ═══════════════ AI CHAT ═══════════════
+const GROQ_KEY='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';
+const SYSTEM=`You are MediBot, an expert MBBS tutor. Cover all subjects: Anatomy, Physiology, Biochemistry, Pathology, Pharmacology, Microbiology, Medicine, Surgery, OBG, Paediatrics, ENT, Ophthalmology. Explain simply with bullet points and bold key terms. Add mnemonics. For MCQs give 4 options with correct answer and explanation. Be encouraging and exam-focused.`;
+function chatKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}}
+async function sendQ(q){goPage('tutor');document.getElementById('chat-input').value=q;await sendMsg();}
+async function sendMsg(){
+  const inp=document.getElementById('chat-input'),text=inp.value.trim();
+  if(!text||chatLoading)return;
+  chatLoading=true;document.getElementById('chat-send').disabled=true;
+  const w=document.getElementById('chat-welcome');if(w)w.remove();
+  addChatMsg('user',text);chatHistory.push({role:'user',content:text});inp.value='';
+  const td=document.createElement('div');td.className='msg ai';td.id='typing';
+  td.innerHTML='<div class="msg-av">🧠</div><div class="msg-bubble"><div class="typing"><div class="tdot"></div><div class="tdot"></div><div class="tdot"></div></div></div>';
+  document.getElementById('chat-msgs').appendChild(td);
+  document.getElementById('chat-msgs').scrollTop=9999;
+  try{
+    const activeKey = window.RUNTIME_GROQ_KEY || GROQ_KEY;
+    const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'Authorization':'Bearer '+activeKey
+      },
+      body:JSON.stringify({
+        model:'llama-3.3-70b-versatile',
+        messages:[
+          {role:'system', content:SYSTEM},
+          ...chatHistory
+        ],
+        max_tokens:1024,
+        temperature:0.7
+      })
+    });
+    const data=await res.json();
+    document.getElementById('typing')?.remove();
+    if(data.error){
+      addChatMsg('ai','⚠️ AI Error: '+data.error.message+'. Please try again.');
+    } else {
+      const reply=data.choices?.[0]?.message?.content||'Sorry, could not respond. Please try again.';
+      chatHistory.push({role:'assistant',content:reply});
+      addChatMsg('ai',reply);
+    }
+  }catch(e){document.getElementById('typing')?.remove();addChatMsg('ai','⚠️ Connection error. Please check internet.');}
+  chatLoading=false;document.getElementById('chat-send').disabled=false;
+}
+function addChatMsg(role,text){
+  const d=document.createElement('div');d.className='msg '+role;
+  d.innerHTML=`<div class="msg-av">${role==='ai'?'🧠':'👤'}</div><div class="msg-bubble">${fmt(text)}</div>`;
+  document.getElementById('chat-msgs').appendChild(d);document.getElementById('chat-msgs').scrollTop=9999;
+}
+function fmt(t){return t.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\*(.*?)\*/g,'<em>$1</em>').replace(/\n/g,'<br>');}
+
+// ═══════════════ PDF VIEWER ═══════════════
+function openPDF(note){
+  currentPDF=note;
+  document.getElementById('pdf-title').textContent=note.topic;
+  document.getElementById('pdf-overlay').classList.add('open');
+  const frame=document.getElementById('pdf-frame');
+  const noEmbed=document.getElementById('pdf-no-embed');
+  const loading=document.getElementById('pdf-loading');
+
+  // Build embed URL
+  let embedUrl=note.link;
+  const m=note.link.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if(m) embedUrl=`https://drive.google.com/file/d/${m[1]}/preview`;
+  else if(note.link.includes('open?id=')) embedUrl=`https://drive.google.com/file/d/${note.link.split('id=')[1]}/preview`;
+
+  frame.style.display='none';
+  noEmbed.style.display='none';
+  loading.style.display='flex';
+
+  if(!navigator.onLine){
+    getPdfBlob(note.id).then(blob=>{
+      loading.style.display='none';
+      if(blob){
+        const blobUrl=URL.createObjectURL(blob);
+        frame.src=blobUrl;
+        frame.style.display='block';
+        frame.onload=()=>{ /* loaded fine */ };
+      } else {
+        noEmbed.style.display='flex';
+        const p=noEmbed.querySelector('p');
+        if(p) p.innerHTML='You are offline.<br>Open this note while online and tap <strong>💾 Save Offline</strong> to read anytime without internet.';
+      }
+    });
+    updatePDFSaveBtn(note.id);
+    return;
+  }
+
+  // Online — load Drive preview
+  // Simple approach: just load iframe, show after 5s regardless
+  frame.src=embedUrl;
+  // Show frame after short delay — Drive preview always loads eventually
+  const showTimer = setTimeout(()=>{
+    loading.style.display='none';
+    frame.style.display='block';
+  }, 2500);
+
+  frame.onload=()=>{
+    clearTimeout(showTimer);
+    loading.style.display='none';
+    frame.style.display='block';
+  };
+  frame.onerror=()=>{
+    clearTimeout(showTimer);
+    loading.style.display='none';
+    noEmbed.style.display='flex';
+  };
+
+  updatePDFSaveBtn(note.id);
+}
+function closePDF(){
+  document.getElementById('pdf-overlay').classList.remove('open');
+  const src=document.getElementById('pdf-frame').src;
+  if(src&&src.startsWith('blob:')) URL.revokeObjectURL(src);
+  document.getElementById('pdf-frame').src='';
+  document.getElementById('pdf-frame').style.display='none';
+  document.getElementById('pdf-loading').style.display='none';
+  document.getElementById('pdf-no-embed').style.display='none';
+  currentPDF=null;
+}
+function updatePDFSaveBtn(id){
+  const btn=document.getElementById('pdf-save-bar-btn');
+  const isSaved=savedNotes.some(s=>s.id===id);
+  if(isSaved){
+    btn.textContent='⏳ Saving...';
+    btn.className='pdf-save-bar-btn saved-bar';
+    // Check if blob is actually downloaded
+    hasPdfBlob(id).then(has => {
+      btn.textContent = has ? '✅ Saved Offline' : '⏳ Downloading...';
+    });
+  } else {
+    btn.textContent='💾 Save Offline';
+    btn.className='pdf-save-bar-btn';
+  }
+}
+function toggleSaveFromViewer(){if(!currentPDF)return;toggleSaveNote(currentPDF);updatePDFSaveBtn(currentPDF.id);}
+function toggleSaveNote(note){
+  const idx=savedNotes.findIndex(s=>s.id===note.id);
+  if(idx>=0){
+    savedNotes.splice(idx,1);
+    deletePdfBlob(note.id);
+  } else {
+    savedNotes.push({...note, savedAt:Date.now()});
+    // Try to download PDF blob for true offline access
+    // Google Drive direct download (CORS-friendly endpoint)
+    const m = note.link.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    const fileId = m ? m[1] : null;
+    if(fileId){
+      // Use a CORS proxy approach — fetch the preview page which embeds the PDF
+      const urls = [
+        `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`,
+        `https://drive.google.com/file/d/${fileId}/preview`
+      ];
+      // Try each URL
+      const tryFetch = (i) => {
+        if(i >= urls.length) return;
+        savePdfBlob(note.id, urls[i]).then(ok => {
+          if(!ok) tryFetch(i+1);
+          else {
+            // Update save button to show downloaded
+            const btn = document.getElementById('pdf-save-bar-btn');
+            if(btn && btn.className.includes('saved')) btn.textContent = '✅ Saved Offline';
+          }
+        });
+      };
+      tryFetch(0);
+    }
+  }
+  saveSaved();
+  if(document.getElementById('page-saved').classList.contains('active'))renderSaved();
+}
+function isNoteSaved(id){return savedNotes.some(s=>s.id===id);}
+
+// ═══════════════ SAVED PAGE ═══════════════
+function renderSaved(){
+  const c=document.getElementById('saved-container');
+  if(!savedNotes.length && !savedVideos.length){
+    c.innerHTML='<div class="saved-empty"><div class="big-icon">💾</div><h3>Nothing saved yet</h3><p>Open any note or video and tap <strong>💾</strong> to save it for offline access.</p></div>';
+    return;
+  }
+  let html='';
+  // Notes section
+  if(savedNotes.length){
+    html+=`<div class="saved-section-title">📄 Saved Notes (${savedNotes.length})</div>`;
+    html+=savedNotes.map(n=>{
+      const co=courses.find(x=>x.id===n.courseId),su=subjects.find(x=>x.id===n.subjectId),fo=folders.find(x=>x.id===n.folderId);
+      const path=[co&&co.name,su&&su.name,fo&&fo.name].filter(Boolean).join(' › ');
+      const safe=JSON.stringify(n).replace(/"/g,'&quot;');
+      return`<div class="saved-note-card"><div class="note-icon">📄</div><div class="note-info"><div class="saved-badge">💾 NOTE</div><div class="note-title">${n.topic}</div><div class="note-meta">${path} · ${new Date(n.savedAt).toLocaleDateString()}</div></div><div class="note-actions"><button class="note-btn" onclick='openPDF(${safe})'>Open 📂</button><button class="note-btn" style="color:var(--accent2);border-color:var(--accent2)" onclick="removeSaved('${n.id}')">✕</button></div></div>`;
+    }).join('');
+  }
+  // Videos section
+  if(savedVideos.length){
+    html+=`<div class="saved-section-title">🎥 Saved Videos (${savedVideos.length})</div>`;
+    html+=savedVideos.map(v=>{
+      const co=courses.find(x=>x.id===v.courseId),su=subjects.find(x=>x.id===v.subjectId);
+      const path=[co&&co.name,su&&su.name].filter(Boolean).join(' › ');
+      return`<div class="saved-video-card"><div class="note-icon" style="background:#1a0e0e;">🎥</div><div class="note-info"><div class="saved-video-badge">💾 VIDEO</div><div class="note-title">${v.title}</div><div class="note-meta">${path} · ${new Date(v.savedAt).toLocaleDateString()}</div></div><div class="note-actions"><button class="note-btn" onclick="openVideo(this)" data-link="${v.link}" data-title="${v.title}">Play ▶</button><button class="note-btn" style="color:var(--accent2);border-color:var(--accent2)" onclick="removeSavedVideo('${v.id}')">✕</button></div></div>`;
+    }).join('');
+  }
+  c.innerHTML=html;
+}
+function removeSaved(id){savedNotes=savedNotes.filter(s=>s.id!==id);saveSaved();renderSaved();}
+function removeSavedVideo(id){savedVideos=savedVideos.filter(v=>v.id!==id);saveSavedVideos();renderSaved();}
+
+// ═══════════════ STUDY MATERIAL ═══════════════
+let smView={level:'courses'};
+function courseIcon(i){return COURSE_ICONS[i%COURSE_ICONS.length];}
+
+function renderMaterial(){
+  const c=document.getElementById('material-container');
+  if(smView.level==='courses')renderCoursesList(c);
+  else if(smView.level==='subjects')renderSubjectsList(c);
+  else if(smView.level==='folders')renderFoldersList(c);
+  else renderNotesList(c);
+}
+
+function renderCoursesList(c){
+  if(!courses.length){c.innerHTML='<div class="empty-state">📭 No courses yet.<br>Add via Admin → Structure!</div>';return;}
+  c.innerHTML=`<div class="folders-grid">${courses.map((co,i)=>`
+    <div class="folder-card" onclick="smView={level:'subjects',courseId:'${co.id}'};renderMaterial()">
+      <div class="folder-icon">${courseIcon(i)}</div>
+      <div style="flex:1"><div class="folder-name">${co.name}</div><div class="folder-count">${subjects.filter(s=>s.courseId===co.id).length} subjects</div></div>
+      <div class="folder-arrow">→</div></div>`).join('')}</div>`;
+}
+
+function renderSubjectsList(c){
+  const co=courses.find(x=>x.id===smView.courseId),coIdx=courses.indexOf(co);
+  const subs=subjects.filter(s=>s.courseId===smView.courseId);
+  c.innerHTML=`<div class="breadcrumb"><span class="bc-link" onclick="smView={level:'courses'};renderMaterial()">📚 Material</span><span class="bc-sep">›</span><span class="bc-cur">${courseIcon(coIdx)} ${co?co.name:''}</span></div>
+  <div class="folders-grid">${subs.length?subs.map(s=>{
+    const fc=folders.filter(f=>f.subjectId===s.id).length,nc=notes.filter(n=>n.subjectId===s.id).length,vc=videos.filter(v=>v.subjectId===s.id).length;
+    return`<div class="folder-card" onclick="smView={level:'folders',courseId:'${smView.courseId}',subjectId:'${s.id}'};renderMaterial()">
+      <div class="folder-icon">🔬</div><div style="flex:1"><div class="folder-name">${s.name}</div><div class="folder-count">${fc} folders · ${nc} notes · ${vc} videos</div></div><div class="folder-arrow">→</div></div>`;
+  }).join(''):'<div class="empty-state" style="grid-column:span 2">📭 No subjects yet.<br>Add via Admin → Structure!</div>'}</div>`;
+}
+
+function renderFoldersList(c){
+  const co=courses.find(x=>x.id===smView.courseId),su=subjects.find(x=>x.id===smView.subjectId),coIdx=courses.indexOf(co);
+  const fols=folders.filter(f=>f.subjectId===smView.subjectId);
+  const vids=videos.filter(v=>v.subjectId===smView.subjectId);
+  let fHtml=fols.map((f,i)=>{const nc=notes.filter(n=>n.folderId===f.id).length;
+    return`<div class="folder-card" onclick="smView.level='notes';smView.folderId='${f.id}';renderMaterial()">
+      <div class="folder-icon">${FOLDER_ICONS[i%FOLDER_ICONS.length]}</div>
+      <div style="flex:1"><div class="folder-name">${f.name}</div><div class="folder-count">${nc} note${nc!==1?'s':''}</div></div><div class="folder-arrow">→</div></div>`;
+  }).join('');
+  if(vids.length)fHtml+=`<div class="folder-card" onclick="smView.level='notes';smView.folderId='__videos__';renderMaterial()">
+    <div class="folder-icon">🎥</div><div style="flex:1"><div class="folder-name">Videos</div><div class="folder-count">${vids.length} video${vids.length!==1?'s':''}</div></div><div class="folder-arrow">→</div></div>`;
+  if(!fHtml)fHtml='<div class="empty-state" style="grid-column:span 2">📭 No folders yet.<br>Add via Admin → Structure → Folders!</div>';
+  c.innerHTML=`<div class="breadcrumb">
+    <span class="bc-link" onclick="smView={level:'courses'};renderMaterial()">📚 Material</span><span class="bc-sep">›</span>
+    <span class="bc-link" onclick="smView={level:'subjects',courseId:'${smView.courseId}'};renderMaterial()">${courseIcon(coIdx)} ${co?co.name:''}</span><span class="bc-sep">›</span>
+    <span class="bc-cur">🔬 ${su?su.name:''}</span></div>
+  <div class="folders-grid">${fHtml}</div>`;
+}
+
+function renderNotesList(c){
+  const co=courses.find(x=>x.id===smView.courseId),su=subjects.find(x=>x.id===smView.subjectId),coIdx=courses.indexOf(co);
+  const isVid=smView.folderId==='__videos__';
+  const fo=!isVid?folders.find(x=>x.id===smView.folderId):null;
+  const folName=isVid?'Videos':(fo?fo.name:'Notes');
+  let inner='';
+  if(isVid){
+    const vids=videos.filter(v=>v.subjectId===smView.subjectId);
+    inner=vids.length?`<div class="videos-list">${vids.map(v=>`<div class="video-card">
+      <div class="video-thumb"><span class="yt-icon">▶️</span><span class="v-subject">${su?su.name.toUpperCase():''}</span></div>
+      <div class="video-body"><div class="video-info"><div class="video-title">${v.title}</div><div class="video-meta">${v.desc||'Video Lecture'}</div></div>
+      <div style="display:flex;gap:6px;flex-shrink:0;"><button class="watch-btn" onclick="openVideo(this)" data-link="${v.link}" data-title="${v.title}">Watch ▶</button><button class="note-btn ${isVideoSaved(v.id)?'saved':''}" style="padding:6px 8px;" onclick="toggleSaveVideo(${JSON.stringify(v).replace(/"/g,'&quot;')});renderMaterial()">${isVideoSaved(v.id)?'✅':'💾'}</button></div></div></div>`).join('')}</div>`
+      :'<div class="empty-state">📭 No videos here yet.</div>';
+  } else {
+    const nts=notes.filter(n=>n.folderId===smView.folderId);
+    inner=nts.length?`<div class="notes-list">${nts.map(n=>{
+      const saved=isNoteSaved(n.id);
+      const safe=JSON.stringify(n).replace(/"/g,'&quot;');
+      return`<div class="note-card"><div class="note-icon">📄</div>
+        <div class="note-info"><div class="note-title">${n.topic}</div><div class="note-meta">${n.desc||'Study Notes'}${saved?' · 💾':''}</div></div>
+        <div class="note-actions">
+          <button class="note-btn" onclick='openPDF(${safe})'>Open 📂</button>
+          <button class="note-btn ${saved?'saved':''}" onclick='toggleSaveNote(${safe});renderMaterial()'>${saved?'✅':'💾'}</button>
+        </div></div>`;
+    }).join('')}</div>`:'<div class="empty-state">📭 No notes here yet.<br>Add via Admin → Note!</div>';
+  }
+  c.innerHTML=`<div class="breadcrumb">
+    <span class="bc-link" onclick="smView={level:'courses'};renderMaterial()">📚 Material</span><span class="bc-sep">›</span>
+    <span class="bc-link" onclick="smView={level:'subjects',courseId:'${smView.courseId}'};renderMaterial()">${courseIcon(coIdx)} ${co?co.name:''}</span><span class="bc-sep">›</span>
+    <span class="bc-link" onclick="smView={level:'folders',courseId:'${smView.courseId}',subjectId:'${smView.subjectId}'};renderMaterial()">🔬 ${su?su.name:''}</span><span class="bc-sep">›</span>
+    <span class="bc-cur">${folName}</span></div>${inner}`;
+}
+
+// ═══════════════ VIDEOS PAGE ═══════════════
+function renderVideosPage(){
+  const tabs=document.getElementById('vid-page-tabs');
+  tabs.innerHTML=`<button class="vpt active" onclick="filterVP('all',this)">All (${videos.length})</button>`
+    +courses.filter(co=>videos.some(v=>v.courseId===co.id)).map(co=>`<button class="vpt" onclick="filterVP('${co.id}',this)">${co.name} (${videos.filter(v=>v.courseId===co.id).length})</button>`).join('');
+  filterVP('all',tabs.querySelector('.vpt'));
+}
+function filterVP(cId,el){
+  document.querySelectorAll('.vpt').forEach(t=>t.classList.remove('active'));el.classList.add('active');
+  const filtered=cId==='all'?videos:videos.filter(v=>v.courseId===cId);
+  const list=document.getElementById('videos-list');
+  if(!filtered.length){list.innerHTML='<div class="empty-state">📭 No videos yet.</div>';return;}
+  list.innerHTML=filtered.map(v=>{
+    const co=courses.find(x=>x.id===v.courseId),su=subjects.find(x=>x.id===v.subjectId);
+    return`<div class="video-card">
+      <div class="video-thumb"><span class="yt-icon">▶️</span>${co?`<span class="v-subject">${co.name.toUpperCase()}</span>`:''}${su?`<span style="font-size:10px;color:var(--muted);margin-left:6px">${su.name}</span>`:''}
+      </div><div class="video-body"><div class="video-info"><div class="video-title">${v.title}</div><div class="video-meta">${v.desc||'Video Lecture'}</div></div>
+      <div style="display:flex;gap:6px;flex-shrink:0;align-items:center;"><button class="watch-btn" onclick="openVideo(this)" data-link="${v.link}" data-title="${v.title}">Watch ▶</button><button class="note-btn ${isVideoSaved(v.id)?'saved':''}" style="padding:6px 8px;" onclick="toggleSaveVideo(${JSON.stringify(v).replace(/"/g,'&quot;')});renderVideosPage()">${isVideoSaved(v.id)?'✅':'💾'}</button></div></div></div>`;
+  }).join('');
+}
+
+// ═══════════════ PLANNER ═══════════════
+function todayKey(){return new Date().toISOString().slice(0,10);}
+function logHours(){const h=parseFloat(document.getElementById('log-hrs').value)||0,k=todayKey();weekLog[k]=(weekLog[k]||0)+h;localStorage.setItem('ms_weeklog',JSON.stringify(weekLog));renderPlanner();}
+function addExam(){const n=document.getElementById('exam-name').value.trim(),d=document.getElementById('exam-date').value;if(!n||!d){alert('Fill exam name and date!');return;}exams.push({name:n,date:d});localStorage.setItem('ms_exams',JSON.stringify(exams));document.getElementById('exam-name').value='';document.getElementById('exam-date').value='';renderPlanner();}
+function delExam(i){exams.splice(i,1);localStorage.setItem('ms_exams',JSON.stringify(exams));renderPlanner();}
+function addGoal(){const t=document.getElementById('goal-input').value.trim();if(!t)return;goals.push({text:t,done:false,date:todayKey()});localStorage.setItem('ms_goals',JSON.stringify(goals));document.getElementById('goal-input').value='';renderPlanner();}
+function toggleGoal(i){goals[i].done=!goals[i].done;localStorage.setItem('ms_goals',JSON.stringify(goals));renderPlanner();}
+function delGoal(i){goals.splice(i,1);localStorage.setItem('ms_goals',JSON.stringify(goals));renderPlanner();}
+function renderPlanner(){
+  const today=todayKey(),todayHrs=weekLog[today]||0,todayGoals=goals.filter(g=>g.date===today),done=todayGoals.filter(g=>g.done).length;
+  document.getElementById('ps-hours').textContent=todayHrs.toFixed(1);
+  document.getElementById('ps-goals').textContent=done+'/'+todayGoals.length;
+  const days=[];for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);days.push(d.toISOString().slice(0,10));}
+  document.getElementById('week-log').innerHTML=`<div style="display:flex;flex-direction:column;gap:5px;margin-top:8px">${days.map(d=>{const h=weekLog[d]||0,label=d===today?'Today':d.slice(5).replace('-','/');return`<div class="planner-day"><span style="font-size:12px;color:var(--muted)">${label}</span><div style="flex:1;margin:0 10px;height:6px;background:var(--border);border-radius:3px;overflow:hidden"><div style="height:100%;width:${Math.min(h/8*100,100)}%;background:var(--accent);border-radius:3px"></div></div><span style="font-size:12px;font-weight:700;color:var(--accent)">${h.toFixed(1)}h</span></div>`;}).join('')}</div>`;
+  document.getElementById('exams-list').innerHTML=exams.length?exams.map((e,i)=>{const d=Math.ceil((new Date(e.date)-new Date())/(864e5)),cls=d<=3?'urgent':d<=7?'soon':'ok';return`<div class="exam-item"><div><div class="exam-name">${e.name}</div><div style="font-size:11px;color:var(--muted)">${e.date}</div></div><div style="display:flex;align-items:center;gap:8px"><span class="exam-days ${cls}">${d<0?'Passed':d===0?'Today!':d+'d left'}</span><button class="del-btn" onclick="delExam(${i})">✕</button></div></div>`;}).join(''):'<div style="font-size:13px;color:var(--muted);text-align:center;padding:12px">No exams yet</div>';
+  document.getElementById('goals-list').innerHTML=todayGoals.length?todayGoals.map(g=>{const idx=goals.indexOf(g);return`<div class="goal-item"><div class="goal-cb ${g.done?'done':''}" onclick="toggleGoal(${idx})">${g.done?'✓':''}</div><span class="goal-text ${g.done?'done':''}">${g.text}</span><button class="goal-del" onclick="delGoal(${idx})">🗑️</button></div>`;}).join(''):'<div style="font-size:13px;color:var(--muted);padding:10px 0">No goals for today. Add one above!</div>';
+}
+
+// ═══════════════ LEADERBOARD ═══════════════
+function submitLB(){
+  const name=document.getElementById('lb-name').value.trim();if(!name){alert('Enter your name!');return;}
+  const hours=parseFloat(document.getElementById('lb-hours').value)||0,topics=parseInt(document.getElementById('lb-topics').value)||0,quiz=parseInt(document.getElementById('lb-quiz').value)||0;
+  const score=(hours*10)+(topics*5)+quiz;
+  const entry={name,hours,topics,quiz,score,date:todayKey()};
+  const idx=lbData.findIndex(e=>e.name.toLowerCase()===name.toLowerCase());
+  if(idx>=0)lbData[idx]=entry;else lbData.push(entry);
+  localStorage.setItem('ms_lb',JSON.stringify(lbData));
+  // Push to Firebase so all batchmates see it live!
+  if(fbConnected&&db){
+    const safeKey=name.replace(/[.#$\[\]/]/g,'_');
+    db.ref('medistudy_lb/'+safeKey).set(entry).catch(e=>console.warn('LB push failed:',e));
+  }
+  ['lb-name','lb-hours','lb-topics','lb-quiz'].forEach(id=>document.getElementById(id).value='');
+  renderLB();
+}
+function renderLB(){
+  if(fbConnected&&db){
+    db.ref('medistudy_lb').once('value').then(snap=>{
+      const d=snap.val();
+      if(d){ lbData=Object.values(d); localStorage.setItem('ms_lb',JSON.stringify(lbData)); }
+      _drawLB();
+    }).catch(()=>_drawLB());
+  } else { _drawLB(); }
+}
+function _drawLB(){
+  const sorted=[...lbData].sort((a,b)=>b.score-a.score);
+  const list=document.getElementById('lb-list');
+  if(!sorted.length){list.innerHTML='<div class="empty-state">📭 No entries yet. Be the first!</div>';return;}
+  const medals=['🥇','🥈','🥉'],cls=['gold','silver','bronze'];
+  list.innerHTML=sorted.map((e,i)=>`<div class="lb-item"><div class="lb-rank ${cls[i]||''}">${i<3?medals[i]:i+1}</div><div class="lb-info2"><div class="lb-name">${e.name}</div><div class="lb-score-row"><span class="lb-badge">⏱ ${e.hours}h</span><span class="lb-badge">📚 ${e.topics}</span><span class="lb-badge">📝 ${e.quiz}/100</span></div></div><div class="lb-total">${e.score}</div></div>`).join('');
+}
+
+// ═══════════════ ADMIN ═══════════════
+function openAdmin(){
+  document.getElementById('admin-modal').classList.add('open');
+  if(adminUnlocked)showPanel();
+  else{document.getElementById('admin-login').style.display='block';document.getElementById('admin-panel').style.display='none';document.getElementById('admin-pw').value='';document.getElementById('login-err').style.display='none';}
+}
+function closeAdmin(){document.getElementById('admin-modal').classList.remove('open');}
+function checkPw(){
+  const input=document.getElementById('admin-pw').value;
+  // Hash the input and compare
+  const msgBuffer=new TextEncoder().encode(input);
+  crypto.subtle.digest('SHA-256',msgBuffer).then(hashBuffer=>{
+    const hashArray=Array.from(new Uint8Array(hashBuffer));
+    const hashHex=hashArray.map(b=>b.toString(16).padStart(2,'0')).join('');
+    if(hashHex===PASS_HASH){adminUnlocked=true;showPanel();}
+    else document.getElementById('login-err').style.display='block';
+  });
+}
+function showPanel(){
+  document.getElementById('admin-login').style.display='none';
+  document.getElementById('admin-panel').style.display='block';
+  populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();updateFBStatus();
+  if(fbConfig){
+    document.getElementById('fb-api-key').value=fbConfig.apiKey||'';
+    document.getElementById('fb-db-url').value=fbConfig.databaseURL||'';
+    document.getElementById('fb-project-id').value=fbConfig.projectId||'';
+  }
+  const savedGK=localStorage.getItem('ms4_groq_key');
+  if(savedGK){document.getElementById('gemini-key-input').value=savedGK;document.getElementById('gemini-key-status').innerHTML='<span style="color:var(--green)">✅ Groq key active — AI Tutor working!</span>';}
+  else{document.getElementById('gemini-key-input').value=GROQ_KEY;document.getElementById('gemini-key-status').innerHTML='<span style="color:var(--green)">✅ Default key active — AI Tutor working!</span>';}
+}
+function switchATab(tab,el){
+  document.querySelectorAll('.atab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.aform').forEach(f=>f.classList.remove('active'));
+  el.classList.add('active');document.getElementById('aform-'+tab).classList.add('active');
+  if(tab==='manage')renderManage();
+  if(tab==='notes'){updateNoteSubjects();updateNoteFolders();}
+  if(tab==='videos')updateVidSubjects();
+  if(tab==='firebase')updateFBStatus();
+}
+function populateAllSelects(){
+  ['struct-course-sel','note-course','vid-course','struct-fcourse'].forEach(id=>{
+    const s=document.getElementById(id);if(!s)return;
+    s.innerHTML=courses.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  });
+  updateNoteSubjects();updateVidSubjects();updateFolderCourseSubject();
+}
+
+// Courses
+function renderAdminCourses(){
+  const el=document.getElementById('admin-courses-list');
+  el.innerHTML=courses.length?courses.map((co,i)=>`<div class="struct-item"><span class="struct-name">${courseIcon(i)} ${co.name}</span><div class="struct-actions"><button class="edit-btn" onclick="renameCourse('${co.id}')">✏️</button><button class="del-btn" onclick="deleteCourse('${co.id}')">Del</button></div></div>`).join(''):'<div style="font-size:12px;color:var(--muted)">No courses yet.</div>';
+}
+function addCourse(){const inp=document.getElementById('new-course-name'),n=inp.value.trim();if(!n)return;courses.push({id:uid(),name:n});saveLocal();inp.value='';renderAdminCourses();populateAllSelects();flashSuccess('struct-success');}
+function renameCourse(id){const co=courses.find(c=>c.id===id);if(!co)return;const n=prompt('Rename:',co.name);if(n&&n.trim()){co.name=n.trim();saveLocal();renderAdminCourses();populateAllSelects();}}
+function deleteCourse(id){
+  if(!confirm('Delete course and ALL its data?'))return;
+  courses=courses.filter(c=>c.id!==id);subjects=subjects.filter(s=>s.courseId!==id);folders=folders.filter(f=>f.courseId!==id);notes=notes.filter(n=>n.courseId!==id);videos=videos.filter(v=>v.courseId!==id);
+  saveLocal();renderAdminCourses();populateAllSelects();
+}
+
+// Subjects
+function renderAdminSubjects(){
+  const courseId=document.getElementById('struct-course-sel').value;
+  const el=document.getElementById('admin-subjects-list');
+  const subs=subjects.filter(s=>s.courseId===courseId);
+  el.innerHTML=subs.length?subs.map(s=>`<div class="struct-item"><span class="struct-name">🔬 ${s.name}</span><div class="struct-actions"><button class="edit-btn" onclick="renameSubject('${s.id}')">✏️</button><button class="del-btn" onclick="deleteSubject('${s.id}')">Del</button></div></div>`).join(''):'<div style="font-size:12px;color:var(--muted);margin-bottom:6px">No subjects yet.</div>';
+}
+function addSubject(){
+  const courseId=document.getElementById('struct-course-sel').value,inp=document.getElementById('new-subject-name'),n=inp.value.trim();if(!n)return;
+  subjects.push({id:uid(),courseId,name:n});saveLocal();inp.value='';renderAdminSubjects();populateAllSelects();updateFolderCourseSubject();flashSuccess('struct-success');
+}
+function renameSubject(id){const s=subjects.find(x=>x.id===id);if(!s)return;const n=prompt('Rename:',s.name);if(n&&n.trim()){s.name=n.trim();saveLocal();renderAdminSubjects();populateAllSelects();updateFolderCourseSubject();}}
+function deleteSubject(id){
+  if(!confirm('Delete subject and all its folders, notes, videos?'))return;
+  subjects=subjects.filter(s=>s.id!==id);folders=folders.filter(f=>f.subjectId!==id);notes=notes.filter(n=>n.subjectId!==id);videos=videos.filter(v=>v.subjectId!==id);
+  saveLocal();renderAdminSubjects();populateAllSelects();updateFolderCourseSubject();
+}
+
+// Folders
+function updateFolderCourseSubject(){
+  const s=document.getElementById('struct-fcourse');if(!s)return;
+  s.innerHTML=courses.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  updateFolderSubjects();
+}
+function updateFolderSubjects(){
+  const courseId=document.getElementById('struct-fcourse').value;
+  const sel=document.getElementById('struct-fsubject');
+  const subs=subjects.filter(s=>s.courseId===courseId);
+  sel.innerHTML=subs.length?subs.map(s=>`<option value="${s.id}">${s.name}</option>`):'<option value="">— No subjects —</option>';
+  renderAdminFolders();
+}
+function renderAdminFolders(){
+  const subjectId=document.getElementById('struct-fsubject').value;
+  const el=document.getElementById('admin-folders-list');
+  const fols=folders.filter(f=>f.subjectId===subjectId);
+  el.innerHTML=fols.length?fols.map(f=>`<div class="struct-item"><span class="struct-name">📁 ${f.name}</span><div class="struct-actions"><button class="edit-btn" onclick="renameFolder('${f.id}')">✏️</button><button class="del-btn" onclick="deleteFolder('${f.id}')">Del</button></div></div>`).join(''):'<div style="font-size:12px;color:var(--muted);margin-bottom:6px">No folders yet.</div>';
+}
+function addFolder(){
+  const subjectId=document.getElementById('struct-fsubject').value,courseId=document.getElementById('struct-fcourse').value;
+  if(!subjectId){alert('Select a subject first!');return;}
+  const inp=document.getElementById('new-folder-name'),n=inp.value.trim();if(!n)return;
+  folders.push({id:uid(),subjectId,courseId,name:n});saveLocal();inp.value='';renderAdminFolders();updateNoteFolders();flashSuccess('struct-success');
+}
+function renameFolder(id){const f=folders.find(x=>x.id===id);if(!f)return;const n=prompt('Rename:',f.name);if(n&&n.trim()){f.name=n.trim();saveLocal();renderAdminFolders();updateNoteFolders();}}
+function deleteFolder(id){
+  if(!confirm('Delete folder and all notes inside?'))return;
+  folders=folders.filter(f=>f.id!==id);notes=notes.filter(n=>n.folderId!==id);
+  saveLocal();renderAdminFolders();updateNoteFolders();
+}
+
+// Note form
+function updateNoteSubjects(){
+  const sel=document.getElementById('note-subject');if(!sel)return;
+  const cId=document.getElementById('note-course')?.value;
+  const subs=subjects.filter(s=>s.courseId===cId);
+  sel.innerHTML=subs.length?subs.map(s=>`<option value="${s.id}">${s.name}</option>`):'<option value="">— No subjects —</option>';
+  updateNoteFolders();
+}
+function updateNoteFolders(){
+  const sel=document.getElementById('note-folder');if(!sel)return;
+  const sId=document.getElementById('note-subject')?.value;
+  const fols=folders.filter(f=>f.subjectId===sId);
+  sel.innerHTML=fols.length?fols.map(f=>`<option value="${f.id}">${f.name}</option>`):'<option value="">— No folders —</option>';
+}
+function updateVidSubjects(){
+  const sel=document.getElementById('vid-subject');if(!sel)return;
+  const cId=document.getElementById('vid-course')?.value;
+  const subs=subjects.filter(s=>s.courseId===cId);
+  sel.innerHTML=subs.length?subs.map(s=>`<option value="${s.id}">${s.name}</option>`):'<option value="">— No subjects —</option>';
+}
+
+// Add Note
+function addNote(){
+  const cId=document.getElementById('note-course').value,sId=document.getElementById('note-subject').value,fId=document.getElementById('note-folder').value;
+  const topic=document.getElementById('note-topic').value.trim(),desc=document.getElementById('note-desc').value.trim(),link=document.getElementById('note-link').value.trim();
+  if(!topic||!link){alert('Fill Topic and Google Drive link!');return;}
+  if(!fId){alert('Create a folder first in Structure → Folders!');return;}
+  notes.push({id:uid(),courseId:cId,subjectId:sId,folderId:fId,topic,desc,link});saveLocal();
+  ['note-topic','note-desc','note-link'].forEach(id=>document.getElementById(id).value='');
+  flashSuccess('note-success');
+}
+// Add Video
+function addVideo(){
+  const cId=document.getElementById('vid-course').value,sId=document.getElementById('vid-subject').value;
+  const title=document.getElementById('vid-title').value.trim(),desc=document.getElementById('vid-desc').value.trim(),link=document.getElementById('vid-link').value.trim();
+  if(!title||!link||!sId){alert('Select subject, fill Title and YouTube link!');return;}
+  videos.push({id:uid(),courseId:cId,subjectId:sId,title,desc,link});saveLocal();
+  ['vid-title','vid-desc','vid-link'].forEach(id=>document.getElementById(id).value='');
+  flashSuccess('vid-success');
+}
+
+// Manage
+function renderManage(){
+  document.getElementById('manage-notes').innerHTML=notes.length?notes.map(n=>{
+    const co=courses.find(c=>c.id===n.courseId),su=subjects.find(s=>s.id===n.subjectId),fo=folders.find(f=>f.id===n.folderId);
+    return`<div class="manage-item"><div><div class="mi-title">${n.topic}</div><div class="mi-sub">${[co&&co.name,su&&su.name,fo&&fo.name].filter(Boolean).join(' › ')}</div></div><button class="del-btn" onclick="delNote('${n.id}')">Delete</button></div>`;
+  }).join(''):'<div style="font-size:12px;color:var(--muted)">No notes yet.</div>';
+  document.getElementById('manage-videos').innerHTML=videos.length?videos.map(v=>{
+    const co=courses.find(c=>c.id===v.courseId),su=subjects.find(s=>s.id===v.subjectId);
+    return`<div class="manage-item"><div><div class="mi-title">${v.title}</div><div class="mi-sub">${[co&&co.name,su&&su.name].filter(Boolean).join(' › ')}</div></div><button class="del-btn" onclick="delVideo('${v.id}')">Delete</button></div>`;
+  }).join(''):'<div style="font-size:12px;color:var(--muted)">No videos yet.</div>';
+}
+function delNote(id){if(!confirm('Delete?'))return;notes=notes.filter(n=>n.id!==id);saveLocal();renderManage();}
+function delVideo(id){if(!confirm('Delete?'))return;videos=videos.filter(v=>v.id!==id);saveLocal();renderManage();}
+
+// ═══════════════ SECRET ADMIN ACCESS ═══════════════
+let tapCount = 0;
+let tapTimer = null;
+
+function secretTap(){
+  tapCount++;
+  clearTimeout(tapTimer);
+
+  if(tapCount >= 5){
+    tapCount = 0;
+    openAdmin();
+    return;
+  }
+
+  // Reset after 2 seconds of no tapping — completely silent
+  tapTimer = setTimeout(()=>{ tapCount = 0; }, 2000);
+}
+
+// #admin URL secret access
+if(window.location.hash === '#admin'){
+  window.addEventListener('load', ()=>{ setTimeout(openAdmin, 500); });
+}
+// Also check hash on load
+window.addEventListener('hashchange', ()=>{
+  if(window.location.hash === '#admin') openAdmin();
+});
+
+function flashSuccess(id,msg){const el=document.getElementById(id);if(!el)return;if(msg)el.textContent=msg;el.style.display='block';setTimeout(()=>el.style.display='none',2500);}
+
+function saveGeminiKey(){
+  const key=document.getElementById('gemini-key-input').value.trim();
+  if(!key||!key.startsWith('gsk_')){
+    document.getElementById('gemini-key-status').innerHTML='<span style="color:#e85d38">❌ Invalid key. Should start with sk-or...</span>';
+    return;
+  }
+  localStorage.setItem('ms4_groq_key', key);
+  window.RUNTIME_GROQ_KEY = key;
+  document.getElementById('gemini-key-status').innerHTML='<span style="color:var(--green)">✅ Key saved! AI Tutor is active.</span>';
+}
+
+// Load saved Groq key on startup
+(function loadGroqKey(){
+  const saved = localStorage.getItem('ms4_groq_key');
+  if(saved) window.RUNTIME_GROQ_KEY = saved;
+})();
+
+document.getElementById('admin-modal').addEventListener('click',function(e){if(e.target===this)closeAdmin();});
+
+// ═══════════════ INIT ═══════════════
+// Init runs after all scripts load
+window.addEventListener('load', function(){
+  renderMaterial();renderVideosPage();renderPlanner();renderLB();renderSaved();updateHomeBanner();
+  initNotifUI();
+  renderQNotes();
+  updateProfileUI();
+  // Pre-fill LB name from profile
+  const lbName = document.getElementById('lb-name');
+  if(lbName && userProfile.name) lbName.value = userProfile.name;
+  if(!navigator.onLine) showOfflineToast('📡 You are offline — saved content still works!',false);
+});
+
+// Hardcoded Firebase config — always connected!
+if(!fbConfig){
+  fbConfig = {
+    apiKey: "AIzaSyCUvf8Diw5UODQZ_FI7n1YAJCVWtiPkkHQ",
+    authDomain: "medistudy-16a82.firebaseapp.com",
+    databaseURL: "https://medistudy-16a82-default-rtdb.firebaseio.com",
+    projectId: "medistudy-16a82",
+    storageBucket: "medistudy-16a82.firebasestorage.app",
+    messagingSenderId: "334907868236",
+    appId: "1:334907868236:web:3859f868178e89c4fee0e9"
+  };
+  localStorage.setItem('ms4_fbconfig', JSON.stringify(fbConfig));
+}
+initFirebase(function(){
+  // Real-time sync — when admin pushes, all devices update automatically
+  if(!db) return;
+  db.ref('medistudy').on('value', function(snap){
+    const d = snap.val();
+    if(!d) return;
+    courses  = d.courses  || courses;
+    subjects = d.subjects || subjects;
+    folders  = d.folders  || folders;
+    notes    = d.notes    || notes;
+    videos   = d.videos   || videos;
+    saveLocal();
+    // Refresh current view if on material or videos page
+    if(document.getElementById('page-material').classList.contains('active')) renderMaterial();
+    if(document.getElementById('page-videos').classList.contains('active')) renderVideosPage();
+  });
+});
+</script>
+
+
+<!-- VIDEO PLAYER OVERLAY -->
+<div class="video-overlay" id="video-overlay">
+  <div class="video-viewer-bar">
+    <button class="video-close-btn" onclick="closeVideo()">✕ Close</button>
+    <span class="pdf-title" id="video-title"></span>
+    <button class="pdf-save-bar-btn" id="video-save-bar-btn" onclick="toggleSaveFromVideoViewer()">💾 Save</button>
+  </div>
+  <div class="video-frame-wrap" id="video-frame-wrap">
+    <iframe id="video-frame" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture"></iframe>
+  </div>
+  <div class="video-fallback" id="video-fallback" style="display:none;">
+    <img id="video-thumb-img" src="" alt="" style="width:100%;max-width:340px;border-radius:12px;margin-bottom:16px;display:none;">
+    <div class="yt-big">▶️</div>
+    <h3 id="video-fallback-title" style="color:#fff;font-size:17px;margin-bottom:8px;text-align:center;padding:0 16px;"></h3>
+    <p style="font-size:13px;color:#aaa;margin-bottom:20px;text-align:center;max-width:300px;line-height:1.6;">YouTube doesn't allow playing inside apps on mobile.<br>Tap below to watch it directly.</p>
+    <a id="video-fallback-link" class="yt-open-btn" target="_blank">▶ Watch on YouTube</a>
+    <button onclick="tryEmbedVideo()" style="margin-top:12px;background:none;border:1px solid #555;color:#aaa;padding:8px 18px;border-radius:8px;font-size:12px;cursor:pointer;">Try embed anyway</button>
+  </div>
+</div>
+
+<!-- Secret Admin Hint -->
+<div class="secret-hint" id="secret-hint"></div>
+
+<!-- OFFLINE TOAST -->
+<div id="offline-toast"></div>
+
+<!-- PWA Install Banner -->
+<div class="pwa-banner" id="pwa-banner">
+  <div class="pwa-banner-icon">🩺</div>
+  <div class="pwa-banner-text">
+    <div class="pwa-banner-title">Install MediStudy App</div>
+    <div class="pwa-banner-sub">Add to home screen — works offline too!</div>
+  </div>
+  <button class="pwa-install-btn" id="pwa-install-btn" onclick="installPWA()">Install</button>
+  <button class="pwa-dismiss-btn" onclick="dismissPWA()">✕</button>
+</div>
+
+
+<script>
+// ═══════════════ VIDEO PLAYER ═══════════════
+let currentVideo = null;
+let currentEmbedUrl = '';
+
+function updateVideoSaveBtn() {
+  if(!currentVideo) return;
+  const btn = document.getElementById('video-save-bar-btn');
+  const saved = isVideoSaved(currentVideo.id);
+  btn.textContent = saved ? '✅ Saved' : '💾 Save';
+  btn.className = saved ? 'pdf-save-bar-btn saved-bar' : 'pdf-save-bar-btn';
+}
+
+function toggleSaveFromVideoViewer() {
+  if(!currentVideo) return;
+  toggleSaveVideo(currentVideo);
+  updateVideoSaveBtn();
+}
+
+// Extract YouTube video ID from any YouTube URL
+function getYTVideoId(link) {
+  const short = link.match(/youtu\.be\/([a-zA-Z0-9_-]+)/);
+  if(short) return short[1];
+  const watch = link.match(/[?&]v=([a-zA-Z0-9_-]+)/);
+  if(watch) return watch[1];
+  const embed = link.match(/\/embed\/([a-zA-Z0-9_-]+)/);
+  if(embed) return embed[1];
+  return null;
+}
+
+// Check if running on mobile browser
+function isMobile() {
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
+function openVideo(elOrLink, ttlOverride, linkOverride) {
+  let link, ttl;
+  if(elOrLink===null){
+    link=linkOverride; ttl=ttlOverride;
+  } else if(typeof elOrLink === 'string') {
+    link = elOrLink; ttl = ttlOverride||elOrLink;
+  } else {
+    link = elOrLink.getAttribute('data-link');
+    ttl  = elOrLink.getAttribute('data-title');
+  }
+
+  currentVideo = videos.find(v=>v.link===link) || {id:'_'+link.slice(-8),link,title:ttl,courseId:'',subjectId:''};
+
+  const ytId = getYTVideoId(link);
+  currentEmbedUrl = ytId
+    ? `https://www.youtube.com/embed/${ytId}?autoplay=1&rel=0`
+    : link;
+
+  // Set titles and fallback link
+  document.getElementById('video-title').textContent = ttl || 'Video Lecture';
+  document.getElementById('video-fallback-title').textContent = ttl || 'Video Lecture';
+  document.getElementById('video-fallback-link').href = link;
+
+  // Show YouTube thumbnail if we have the video ID
+  const thumbImg = document.getElementById('video-thumb-img');
+  if(ytId) {
+    thumbImg.src = `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
+    thumbImg.style.display = 'block';
+  } else {
+    thumbImg.style.display = 'none';
+  }
+
+  document.getElementById('video-overlay').classList.add('open');
+
+  // On mobile: YouTube always blocks iframe — show fallback immediately
+  if(isMobile()) {
+    showVideoFallback();
+  } else {
+    // On desktop: try iframe, fall back after 3s if it fails
+    tryEmbedVideo();
+    setTimeout(() => {
+      try {
+        const f = document.getElementById('video-frame');
+        if(f.contentDocument !== null) showVideoFallback(); // loaded blank = blocked
+      } catch(e) {
+        // Cross-origin error = YouTube loaded fine, do nothing
+      }
+    }, 3000);
+  }
+
+  if(typeof gtag !== 'undefined') {
+    gtag('event', 'video_opened', { event_category: 'Videos', event_label: ttl });
+  }
+  setTimeout(updateVideoSaveBtn, 100);
+}
+
+function tryEmbedVideo() {
+  const frameWrap = document.getElementById('video-frame-wrap');
+  const fallback  = document.getElementById('video-fallback');
+  const frame     = document.getElementById('video-frame');
+  frameWrap.style.display = 'block';
+  fallback.style.display  = 'none';
+  frame.src = currentEmbedUrl;
+}
+
+function showVideoFallback() {
+  document.getElementById('video-frame-wrap').style.display = 'none';
+  document.getElementById('video-fallback').style.display = 'flex';
+  document.getElementById('video-frame').src = ''; // stop loading
+}
+
+function closeVideo() {
+  document.getElementById('video-overlay').classList.remove('open');
+  document.getElementById('video-frame').src = '';
+  document.getElementById('video-frame-wrap').style.display = 'block';
+  document.getElementById('video-fallback').style.display = 'none';
+}
+</script>
+
+<script>
+// ═══════════════ PWA ═══════════════
+let deferredPrompt = null;
+
+// Create and inject manifest dynamically
+const manifest = {
+  name: 'MediStudy — MBBS Companion',
+  short_name: 'MediStudy',
+  description: 'MBBS study app for Ulyanovsk State University students',
+  start_url: '.',
+  display: 'standalone',
+  background_color: '#0e0f13',
+  theme_color: '#e8a838',
+  orientation: 'portrait',
+  icons: [
+    { src: 'https://img.icons8.com/fluency/192/stethoscope.png', sizes: '192x192', type: 'image/png' },
+    { src: 'https://img.icons8.com/fluency/512/stethoscope.png', sizes: '512x512', type: 'image/png' }
+  ]
+};
+const blob = new Blob([JSON.stringify(manifest)], {type:'application/json'});
+const manifestURL = URL.createObjectURL(blob);
+document.getElementById('pwa-manifest-link').href = manifestURL;
+
+// Register service worker for offline support
+// ═══════════════ SERVICE WORKER (TRUE OFFLINE) ═══════════════
+// The SW is embedded as a base64 data URI so it survives refreshes
+// (blob: URLs are destroyed on reload — this is the fix)
+// ═══════════════════════════════════════════════════
+// ROCK SOLID OFFLINE ENGINE — MediStudy
+// Strategy: Cache the app shell directly from the page
+// No blob SW tricks — use Cache API directly
+// ═══════════════════════════════════════════════════
+const MS_CACHE = 'medistudy-shell-v1';
+
+// STEP 1: When online, save the full page HTML into Cache API
+// This is the most reliable offline strategy
+function cacheAppShell(){
+  if(!('caches' in window) || !navigator.onLine) return;
+  try {
+    const html = '<!DOCTYPE html>' + document.documentElement.outerHTML;
+    const opts = {headers:{'Content-Type':'text/html;charset=utf-8'}};
+    caches.open(MS_CACHE).then(cache => {
+      // Cache under multiple URL keys so any variation hits the cache
+      [location.href, location.origin+'/', location.origin+'/index.html'].forEach(url => {
+        cache.put(url, new Response(html, opts));
+      });
+    }).catch(()=>{});
+  } catch(e){}
+}
+
+// STEP 2: Register a simple, reliable service worker
+// It intercepts navigation and serves from our cache
+if('serviceWorker' in navigator){
+  const sw = `
+const C='${MS_CACHE}';
+self.addEventListener('install',e=>e.waitUntil(self.skipWaiting()));
+self.addEventListener('activate',e=>e.waitUntil(
+  caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C&&!k.startsWith('medistudy-pdf')).map(k=>caches.delete(k))))
+  .then(()=>self.clients.claim())
+));
+self.addEventListener('fetch',e=>{
+  const u=e.request.url;
+  // Skip external APIs completely
+  if(['firebaseio.com','googleapis.com','google-analytics','gtag','groq.com','drive.google.com']
+    .some(x=>u.includes(x))) return;
+  // For navigation (loading the app) — cache first, then network
+  if(e.request.mode==='navigate'){
+    e.respondWith(
+      caches.open(C).then(cache=>
+        cache.match(e.request).then(cached=>{
+          // Always try network in background to keep cache fresh
+          fetch(e.request).then(r=>{if(r&&r.ok)cache.put(e.request,r.clone());}).catch(()=>{});
+          return cached || fetch(e.request).catch(()=>
+            // Last resort: try any cached URL variant
+            cache.match('/').then(r=>r||cache.match(location.origin+'/index.html'))
+          );
+        })
+      )
+    );
+    return;
+  }
+  // For fonts/icons — cache first forever
+  if(['fonts.gstatic','fonts.googleapis','icons8'].some(x=>u.includes(x))){
+    e.respondWith(
+      caches.match(e.request).then(r=>r||
+        fetch(e.request).then(res=>{
+          if(res.ok)caches.open(C).then(c=>c.put(e.request,res.clone()));
+          return res;
+        }).catch(()=>r)
+      )
+    );
+    return;
+  }
+  // Everything else: network with cache fallback
+  e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)));
+});`;
+  // Register SW — try blob URL first
+  try {
+    const blob = new Blob([sw], {type:'application/javascript'});
+    const url = URL.createObjectURL(blob);
+    navigator.serviceWorker.register(url, {scope:'/'})
+      .then(()=>{ console.log('[MediStudy] SW registered'); })
+      .catch(()=>{
+        // Blob failed — try data URI
+        try {
+          navigator.serviceWorker.register(
+            'data:application/javascript;base64,'+btoa(unescape(encodeURIComponent(sw)))
+          ).catch(()=>{});
+        } catch(e2){}
+      });
+  } catch(e){}
+}
+
+// Cache shell 3 seconds after load (page fully rendered by then)
+window.addEventListener('load', ()=>{ setTimeout(cacheAppShell, 3000); });
+// Also re-cache when coming back online
+window.addEventListener('online', ()=>{ setTimeout(cacheAppShell, 1000); });
+
+
+
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  // Show banner after 3 seconds
+  setTimeout(() => {
+    if(!localStorage.getItem('pwa_dismissed')) {
+      document.getElementById('pwa-banner').classList.add('show');
+    }
+  }, 3000);
+});
+
+function installPWA(){
+  if(!deferredPrompt) return;
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.then(result => {
+    if(result.outcome === 'accepted'){
+      gtag('event', 'pwa_installed', {event_category: 'PWA'});
+      document.getElementById('pwa-banner').classList.remove('show');
+    }
+    deferredPrompt = null;
+  });
+}
+
+function installPWAFromAbout(){
+  const btn = document.getElementById('pwa-about-install-btn');
+  const manualSteps = document.getElementById('pwa-manual-steps');
+  if(deferredPrompt){
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(result => {
+      if(result.outcome === 'accepted'){
+        btn.textContent = '✅ App Installed!';
+        btn.disabled = true;
+        gtag('event', 'pwa_installed', {event_category: 'PWA', event_label: 'from_about'});
+      }
+      deferredPrompt = null;
+    });
+  } else {
+    // Show manual instructions based on device
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    manualSteps.classList.add('show');
+    if(isIOS){
+      manualSteps.innerHTML = `<strong style="color:var(--accent)">📱 On iPhone/iPad:</strong><br>
+        1️⃣ Tap the <strong>Share</strong> button (box with arrow) at bottom<br>
+        2️⃣ Scroll down and tap <strong>"Add to Home Screen"</strong><br>
+        3️⃣ Tap <strong>Add</strong> — done! 🎉`;
+    } else if(isAndroid){
+      manualSteps.innerHTML = `<strong style="color:var(--accent)">📱 On Android:</strong><br>
+        1️⃣ Tap the <strong>⋮ menu</strong> (3 dots) in your browser<br>
+        2️⃣ Tap <strong>"Add to Home Screen"</strong> or <strong>"Install App"</strong><br>
+        3️⃣ Tap <strong>Add</strong> — done! 🎉`;
+    } else {
+      manualSteps.innerHTML = `<strong style="color:var(--accent)">💻 On Desktop (Chrome):</strong><br>
+        1️⃣ Click the <strong>⊕ install icon</strong> in the address bar<br>
+        2️⃣ Click <strong>Install</strong><br><br>
+        <strong style="color:var(--accent)">📱 On Mobile:</strong><br>
+        Use your browser's <strong>Share → Add to Home Screen</strong> option`;
+    }
+  }
+}
+
+// Update install button when prompt becomes available
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  // Update about page button if visible
+  const btn = document.getElementById('pwa-about-install-btn');
+  if(btn){ btn.textContent = '⬇️ Install App'; btn.disabled = false; }
+  // Show banner after 3 seconds
+  setTimeout(() => {
+    if(!localStorage.getItem('pwa_dismissed')) {
+      document.getElementById('pwa-banner').classList.add('show');
+    }
+  }, 3000);
+});
+
+// ═══════════════ PROFILE ═══════════════
+let userProfile = JSON.parse(localStorage.getItem('ms_profile') || '{"name":"","course":""}');
+
+function getInitials(name){
+  if(!name) return '👤';
+  return name.trim().split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+}
+
+function updateProfileUI(){
+  const initials = getInitials(userProfile.name);
+  const btn = document.getElementById('profile-avatar-btn');
+  if(btn) btn.textContent = userProfile.name ? initials : '👤';
+
+  // Profile modal only — NEVER touch the About page (that always shows Ankit Lal Sahu)
+  const nameDis = document.getElementById('profile-name-display');
+  const courseDis = document.getElementById('profile-course-display');
+  const avatarBig = document.getElementById('profile-avatar-big');
+  if(nameDis) nameDis.textContent = userProfile.name || 'Set your name';
+  if(courseDis) courseDis.textContent = userProfile.course || 'Tap Edit to set up your profile';
+  if(avatarBig) avatarBig.textContent = userProfile.name ? initials : '👤';
+}
+
+function openProfile(){
+  showProfileView();
+  document.getElementById('profile-modal-overlay').classList.add('open');
+}
+function closeProfile(){
+  document.getElementById('profile-modal-overlay').classList.remove('open');
+}
+function showProfileView(){
+  document.getElementById('profile-view').style.display='block';
+  document.getElementById('profile-edit-form').style.display='none';
+}
+function showProfileEdit(){
+  document.getElementById('profile-name-inp').value = userProfile.name;
+  document.getElementById('profile-course-inp').value = userProfile.course;
+  document.getElementById('profile-view').style.display='none';
+  document.getElementById('profile-edit-form').style.display='block';
+}
+function saveProfile(){
+  userProfile.name = document.getElementById('profile-name-inp').value.trim();
+  userProfile.course = document.getElementById('profile-course-inp').value;
+  localStorage.setItem('ms_profile', JSON.stringify(userProfile));
+  updateProfileUI();
+  showProfileView();
+  // Pre-fill leaderboard name
+  const lbName = document.getElementById('lb-name');
+  if(lbName && !lbName.value) lbName.value = userProfile.name;
+  // Pre-fill batch chat name
+  if(userProfile.name && !chatUserName){
+    chatUserName = userProfile.name;
+    localStorage.setItem('ms_chat_name', chatUserName);
+  }
+}
+
+
+function dismissPWA(){
+  document.getElementById('pwa-banner').classList.remove('show');
+  localStorage.setItem('pwa_dismissed', '1');
+}
+
+// Hide banner when app is already installed
+window.addEventListener('appinstalled', () => {
+  document.getElementById('pwa-banner').classList.remove('show');
+  const btn = document.getElementById('pwa-about-install-btn');
+  if(btn){ btn.textContent='✅ App Installed!'; btn.disabled=true; }
+});
+
+// ═══════════════ ANALYTICS TRACKING ═══════════════
+// Track time spent in app
+let sessionStart = Date.now();
+let activeStart = Date.now();
+let totalActiveTime = 0;
+
+// Track page views
+const originalGoPage = goPage;
+window.goPage = function(id) {
+  originalGoPage(id);
+  gtag('event', 'page_view', {
+    page_title: id,
+    page_location: window.location.href + '#' + id
+  });
+};
+
+// Track note opens
+const originalOpenPDF = openPDF;
+window.openPDF = function(note) {
+  originalOpenPDF(note);
+  gtag('event', 'note_opened', {
+    event_category: 'Study Material',
+    event_label: note.topic
+  });
+};
+
+// Track note saves
+const originalToggleSave = toggleSaveNote;
+window.toggleSaveNote = function(note) {
+  originalToggleSave(note);
+  const isSaved = !savedNotes.some(s => s.id === note.id); // after toggle
+  gtag('event', isSaved ? 'note_saved' : 'note_unsaved', {
+    event_category: 'Offline',
+    event_label: note.topic
+  });
+};
+
+// Track AI chat usage
+const originalSendMsg = sendMsg;
+window.sendMsg = async function() {
+  gtag('event', 'ai_question_asked', { event_category: 'AI Tutor' });
+  return originalSendMsg();
+};
+
+// ═══════════════ PDF BLOB STORAGE (IndexedDB) ═══════════════
+// Saves actual PDF content so it works offline
+const PDF_DB_NAME = 'MediStudyPDFs', PDF_DB_VER = 1, PDF_STORE = 'pdfs';
+let pdfDB = null;
+
+function openPdfDB(){
+  return new Promise((res, rej) => {
+    if(pdfDB){res(pdfDB);return;}
+    const req = indexedDB.open(PDF_DB_NAME, PDF_DB_VER);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(PDF_STORE, {keyPath:'id'});
+    req.onsuccess = e => { pdfDB = e.target.result; res(pdfDB); };
+    req.onerror = () => rej('IndexedDB failed');
+  });
+}
+async function savePdfBlob(noteId, url){
+  try {
+    // Fetch the PDF via Drive preview and store as blob
+    const resp = await fetch(url, {mode:'cors'});
+    if(!resp.ok) return false;
+    const blob = await resp.blob();
+    const db = await openPdfDB();
+    return new Promise(res => {
+      const tx = db.transaction(PDF_STORE,'readwrite');
+      tx.objectStore(PDF_STORE).put({id: noteId, blob, savedAt: Date.now()});
+      tx.oncomplete = () => res(true);
+      tx.onerror = () => res(false);
+    });
+  } catch(e){ return false; }
+}
+async function getPdfBlob(noteId){
+  try {
+    const db = await openPdfDB();
+    return new Promise(res => {
+      const req = db.transaction(PDF_STORE,'readonly').objectStore(PDF_STORE).get(noteId);
+      req.onsuccess = e => res(e.target.result ? e.target.result.blob : null);
+      req.onerror = () => res(null);
+    });
+  } catch(e){ return null; }
+}
+async function deletePdfBlob(noteId){
+  try {
+    const db = await openPdfDB();
+    const tx = db.transaction(PDF_STORE,'readwrite');
+    tx.objectStore(PDF_STORE).delete(noteId);
+  } catch(e){}
+}
+async function hasPdfBlob(noteId){
+  const blob = await getPdfBlob(noteId);
+  return blob !== null;
+}
+
+
+function showOfflineToast(msg, isOnline){
+  const t=document.getElementById('offline-toast');
+  t.textContent=msg;
+  t.style.background=isOnline?'#0e2a1a':'#2a0e0e';
+  t.style.color=isOnline?'var(--green)':'#e85d38';
+  t.style.border=`1px solid ${isOnline?'var(--green)':'#e85d38'}`;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),3500);
+}
+window.addEventListener('offline',()=>{
+  showOfflineToast('📡 You are offline — saved notes still work!',false);
+  updateHomeBanner();
+});
+window.addEventListener('online',()=>{
+  showOfflineToast('✅ Back online!',true);
+  updateHomeBanner();
+  if(fbConnected&&db) pullFromFirebase();
+});
+// Override updateHomeBanner to show offline state
+const _origUpdateHomeBanner = updateHomeBanner;
+window.updateHomeBanner = function(){
+  _origUpdateHomeBanner();
+  if(!navigator.onLine){
+    const el=document.getElementById('home-fb-banner');
+    if(el) el.innerHTML=`<div class="offline-banner">📡 <span>You are <strong>offline</strong> — saved notes & videos still available</span></div>`;
+  }
+};
+
+// ═══════════════ NOTIFICATIONS ═══════════════
+let notifEnabled=localStorage.getItem('ms_notif_on')==='1';
+let notifTime=localStorage.getItem('ms_notif_time')||'08:00';
+let notifInterval=null;
+
+function toggleNotification(){
+  notifEnabled=document.getElementById('notif-toggle').checked;
+  localStorage.setItem('ms_notif_on',notifEnabled?'1':'0');
+  if(notifEnabled){
+    requestNotifPermission();
+  } else {
+    clearInterval(notifInterval);
+    document.getElementById('notif-status').textContent='🔕 Reminders off';
+  }
+}
+function saveNotifTime(){
+  notifTime=document.getElementById('notif-time').value;
+  localStorage.setItem('ms_notif_time',notifTime);
+  if(notifEnabled) scheduleNotif();
+}
+function requestNotifPermission(){
+  if(!('Notification' in window)){
+    document.getElementById('notif-status').textContent='❌ Notifications not supported in this browser.';
+    document.getElementById('notif-toggle').checked=false;
+    return;
+  }
+  Notification.requestPermission().then(p=>{
+    if(p==='granted'){
+      document.getElementById('notif-status').textContent=`✅ Reminders on! Will notify at ${notifTime} daily.`;
+      scheduleNotif();
+    } else {
+      document.getElementById('notif-status').textContent='❌ Permission denied. Allow notifications in browser settings.';
+      document.getElementById('notif-toggle').checked=false;
+      notifEnabled=false;
+      localStorage.setItem('ms_notif_on','0');
+    }
+  });
+}
+function scheduleNotif(){
+  clearInterval(notifInterval);
+  notifInterval=setInterval(()=>{
+    const now=new Date();
+    const [hh,mm]=notifTime.split(':').map(Number);
+    if(now.getHours()===hh&&now.getMinutes()===mm){
+      if(Notification.permission==='granted'){
+        new Notification('📚 MediStudy Reminder',{
+          body:'Time to study! Open MediStudy and hit your goals today 🩺',
+          icon:'https://img.icons8.com/fluency/96/stethoscope.png'
+        });
+      }
+    }
+  },60000);
+}
+function initNotifUI(){
+  const tog=document.getElementById('notif-toggle');
+  if(tog){tog.checked=notifEnabled;document.getElementById('notif-time').value=notifTime;}
+  if(notifEnabled&&Notification.permission==='granted'){
+    document.getElementById('notif-status').textContent=`✅ Reminders on at ${notifTime} daily.`;
+    scheduleNotif();
+  } else if(notifEnabled){
+    document.getElementById('notif-status').textContent='⚠️ Tap toggle to reactivate reminders.';
+  }
+}
+
+// ═══════════════ QUICK NOTES ═══════════════
+let qNotes=JSON.parse(localStorage.getItem('ms_qnotes')||'[]');
+let currentQNote=null;
+let qnAutoSave=null;
+
+function saveQNotes(){localStorage.setItem('ms_qnotes',JSON.stringify(qNotes));}
+
+function newQNote(){
+  const note={id:uid(),title:'',body:'',createdAt:Date.now(),updatedAt:Date.now()};
+  qNotes.unshift(note);saveQNotes();
+  openQNote(note.id);
+}
+function openQNote(id){
+  const note=qNotes.find(n=>n.id===id);if(!note)return;
+  currentQNote=note;
+  document.getElementById('qn-title-input').value=note.title;
+  document.getElementById('qn-body-input').value=note.body;
+  document.getElementById('qn-editor').style.display='block';
+  document.getElementById('qn-save-status').textContent='Auto-saved ✓';
+  document.getElementById('qn-title-input').focus();
+}
+function closeQNEditor(){
+  saveCurrentQNote();
+  document.getElementById('qn-editor').style.display='none';
+  currentQNote=null;
+  renderQNotes();
+}
+function saveCurrentQNote(){
+  if(!currentQNote)return;
+  currentQNote.title=document.getElementById('qn-title-input').value||'Untitled';
+  currentQNote.body=document.getElementById('qn-body-input').value;
+  currentQNote.updatedAt=Date.now();
+  saveQNotes();
+  document.getElementById('qn-save-status').textContent='Saved ✓';
+}
+function deleteQNote(){
+  if(!currentQNote)return;
+  if(!confirm('Delete this note?'))return;
+  qNotes=qNotes.filter(n=>n.id!==currentQNote.id);saveQNotes();
+  document.getElementById('qn-editor').style.display='none';
+  currentQNote=null;renderQNotes();
+}
+function renderQNotes(){
+  const q=(document.getElementById('qn-search')?.value||'').toLowerCase();
+  const filtered=q?qNotes.filter(n=>(n.title+n.body).toLowerCase().includes(q)):qNotes;
+  const list=document.getElementById('qn-list');
+  if(!filtered.length){
+    list.innerHTML=`<div class="empty-state" style="padding:40px 20px;">📝<br>${q?'No notes match your search':'Tap <strong>+ New Note</strong> to start!'}</div>`;return;
+  }
+  list.innerHTML=filtered.map(n=>`<div class="qn-card" onclick="openQNote('${n.id}')">
+    <div class="qn-card-title">${n.title||'Untitled'}</div>
+    <div class="qn-card-preview">${n.body||'Empty note...'}</div>
+    <div class="qn-card-date">${new Date(n.updatedAt).toLocaleString()}</div>
+  </div>`).join('');
+}
+// Auto-save while typing
+document.addEventListener('input',e=>{
+  if(e.target.id==='qn-title-input'||e.target.id==='qn-body-input'){
+    clearTimeout(qnAutoSave);
+    qnAutoSave=setTimeout(()=>{saveCurrentQNote();},800);
+  }
+});
+
+// ═══════════════ PROGRESS TRACKER ═══════════════
+let progData=JSON.parse(localStorage.getItem('ms_progress')||'{}');
+// progData = { subjectId: { topics: [{id,name,done}] } }
+function saveProgress(){localStorage.setItem('ms_progress',JSON.stringify(progData));}
+
+function renderProgress(){
+  const container=document.getElementById('prog-container');
+  const summary=document.getElementById('prog-summary');
+  if(!subjects.length){
+    container.innerHTML='<div class="empty-state">📭 No subjects yet. Add via Admin → Structure first!</div>';
+    summary.innerHTML='';return;
+  }
+  // Calculate overall stats
+  let totalTopics=0,doneTopics=0;
+  subjects.forEach(s=>{
+    const d=progData[s.id];
+    if(d&&d.topics){totalTopics+=d.topics.length;doneTopics+=d.topics.filter(t=>t.done).length;}
+  });
+  const pct=totalTopics?Math.round(doneTopics/totalTopics*100):0;
+  summary.innerHTML=`
+    <div class="prog-stat"><div class="prog-stat-val">${pct}%</div><div class="prog-stat-label">OVERALL</div></div>
+    <div class="prog-stat"><div class="prog-stat-val">${doneTopics}</div><div class="prog-stat-label">DONE</div></div>
+    <div class="prog-stat"><div class="prog-stat-val">${totalTopics-doneTopics}</div><div class="prog-stat-label">PENDING</div></div>`;
+  container.innerHTML=subjects.map(s=>{
+    if(!progData[s.id])progData[s.id]={topics:[]};
+    const topics=progData[s.id].topics;
+    const done=topics.filter(t=>t.done).length;
+    const total=topics.length;
+    const pct=total?Math.round(done/total*100):0;
+    const co=courses.find(c=>c.id===s.courseId);
+    return`<div class="prog-subject-card">
+      <div class="prog-subj-header">
+        <div><div class="prog-subj-name">🔬 ${s.name}</div><div style="font-size:10px;color:var(--muted)">${co?co.name:''}</div></div>
+        <div class="prog-pct">${done}/${total} · ${pct}%</div>
+      </div>
+      <div class="prog-bar-wrap"><div class="prog-bar-fill" style="width:${pct}%"></div></div>
+      <div class="prog-topics">
+        ${topics.map(t=>`<div class="prog-topic-row">
+          <div class="prog-cb ${t.done?'done':''}" onclick="toggleProgTopic('${s.id}','${t.id}')">${t.done?'✓':''}</div>
+          <span class="prog-topic-name ${t.done?'done':''}">${t.name}</span>
+          <button class="goal-del" onclick="delProgTopic('${s.id}','${t.id}')">🗑️</button>
+        </div>`).join('')}
+        ${total===0?'<div style="font-size:12px;color:var(--muted);padding:4px 0;">Add topics to track below ↓</div>':''}
+      </div>
+      <div class="prog-add-row">
+        <input class="prog-add-inp" id="prog-inp-${s.id}" placeholder="Add topic to track..." onkeydown="if(event.key==='Enter')addProgTopic('${s.id}')">
+        <button class="prog-add-btn" onclick="addProgTopic('${s.id}')">+ Add</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function addProgTopic(subjectId){
+  const inp=document.getElementById('prog-inp-'+subjectId);
+  const name=inp?.value.trim();if(!name)return;
+  if(!progData[subjectId])progData[subjectId]={topics:[]};
+  progData[subjectId].topics.push({id:uid(),name,done:false});
+  saveProgress();inp.value='';renderProgress();
+}
+function toggleProgTopic(subjectId,topicId){
+  const t=progData[subjectId]?.topics.find(x=>x.id===topicId);
+  if(!t)return;t.done=!t.done;saveProgress();renderProgress();
+}
+function delProgTopic(subjectId,topicId){
+  if(!progData[subjectId])return;
+  progData[subjectId].topics=progData[subjectId].topics.filter(t=>t.id!==topicId);
+  saveProgress();renderProgress();
+}
+
+// ═══════════════ BATCH CHAT ═══════════════
+let chatUserName = localStorage.getItem('ms_chat_name') || '';
+let batchChatListener = null;
+let chatInitAttempts = 0;
+
+function showChatEl(which){
+  ['chat-name-setup','chat-offline-notice','batch-chat-box','chat-loading'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.style.display='none';
+  });
+  const el=document.getElementById(which);
+  if(el) el.style.display = which==='batch-chat-box'?'block':'flex';
+}
+
+function initBatchChat(){
+  chatInitAttempts++;
+
+  // Offline
+  if(!navigator.onLine){
+    showChatEl('chat-offline-notice'); return;
+  }
+
+  // Firebase ready
+  if(fbConnected && db){
+    chatInitAttempts = 0;
+    if(!chatUserName){
+      showChatEl('chat-name-setup');
+    } else {
+      showChatEl('batch-chat-box');
+      document.getElementById('batch-msgs').style.display='flex';
+      document.getElementById('batch-msgs').style.flexDirection='column';
+      document.getElementById('batch-chat-name-display').textContent='💬 '+chatUserName;
+      startBatchChatListener();
+    }
+    return;
+  }
+
+  // Firebase not ready yet — show loading and wait
+  showChatEl('chat-loading');
+
+  // Try to init Firebase
+  if(typeof initFirebase === 'function'){
+    initFirebase(()=>{
+      if(fbConnected && db){ initBatchChat(); return; }
+    });
+  }
+
+  // Retry every 2 seconds, max 5 times
+  if(chatInitAttempts <= 5){
+    setTimeout(()=>{ if(!fbConnected) initBatchChat(); }, 2000);
+  } else {
+    chatInitAttempts = 0;
+    showChatEl('chat-offline-notice');
+  }
+}
+
+function setChatName(){
+  const name=document.getElementById('chat-username-input').value.trim();
+  if(!name){alert('Enter your name!');return;}
+  chatUserName=name;
+  localStorage.setItem('ms_chat_name',name);
+  chatInitAttempts=0;
+  initBatchChat();
+}
+function changeChatName(){
+  chatUserName='';
+  localStorage.removeItem('ms_chat_name');
+  chatInitAttempts=0;
+  initBatchChat();
+}
+
+function startBatchChatListener(){
+  if(!db) return;
+  // Remove old listener first
+  if(batchChatListener){
+    try{ db.ref('medistudy_chat').off('value', batchChatListener); }catch(e){}
+    batchChatListener=null;
+  }
+  const msgEl=document.getElementById('batch-msgs');
+  msgEl.innerHTML='<div style="text-align:center;padding:20px;font-size:13px;color:var(--muted)">Loading messages...</div>';
+
+  batchChatListener = db.ref('medistudy_chat').limitToLast(50).on('value', snap=>{
+    const msgs=[];
+    snap.forEach(c=>msgs.push(c.val()));
+    if(!msgs.length){
+      msgEl.innerHTML='<div style="text-align:center;padding:40px;font-size:13px;color:var(--muted)">No messages yet. Say hello! 👋</div>';
+      return;
+    }
+    msgEl.innerHTML=msgs.map(m=>{
+      const mine=m.name===chatUserName;
+      const time=new Date(m.ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+      return`<div class="batch-msg ${mine?'mine':'theirs'}">
+        <div class="batch-msg-name">${mine?'You':escapeHTML(m.name||'')}</div>
+        <div class="batch-msg-bubble">${escapeHTML(m.text||'')}</div>
+        <div class="batch-msg-time">${time}</div>
+      </div>`;
+    }).join('');
+    msgEl.scrollTop=msgEl.scrollHeight;
+  }, err=>{
+    // Firebase error — show offline notice
+    msgEl.innerHTML='<div style="text-align:center;padding:20px;font-size:13px;color:#e85d38">⚠️ Connection lost. Check internet.</div>';
+  });
+}
+
+function sendBatchMsg(){
+  const inp=document.getElementById('batch-input');
+  const text=inp.value.trim();
+  if(!text||!chatUserName) return;
+  if(!fbConnected||!db){
+    showOfflineToast('📡 No connection — cannot send message',false); return;
+  }
+  // Optimistic send
+  inp.value='';
+  db.ref('medistudy_chat').push({
+    name:chatUserName, text, ts:Date.now()
+  }).catch(()=>{
+    inp.value=text; // restore if failed
+    showOfflineToast('❌ Failed to send — try again',false);
+  });
+}
+
+function escapeHTML(str){
+  if(!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function trimChatMessages(){
+  if(!fbConnected||!db)return;
+  db.ref('medistudy_chat').once('value',snap=>{
+    const keys=[];snap.forEach(c=>keys.push(c.key));
+    if(keys.length>200){
+      keys.slice(0,keys.length-200).forEach(k=>db.ref('medistudy_chat/'+k).remove());
+    }
+  });
+}
+
+
+// Track time on app when user leaves
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden) {
+    totalActiveTime += Date.now() - activeStart;
+    const minutes = Math.round(totalActiveTime / 60000);
+    if(minutes > 0) {
+      gtag('event', 'time_spent', {
+        event_category: 'Engagement',
+        event_label: 'minutes',
+        value: minutes
+      });
+    }
+  } else {
+    activeStart = Date.now();
+  }
+});
+
+// Track session start
+gtag('event', 'session_start', {
+  event_category: 'Engagement',
+  event_label: 'app_opened'
+});
+</script>
+</body>
+</html>
