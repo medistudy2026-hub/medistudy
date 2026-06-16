@@ -17,7 +17,7 @@
       if(document.getElementById('page-home')) return;
       // App failed to load — try cache
       var urls = [location.href, location.origin+'/', location.origin+'/index.html'];
-      caches.open('medistudy-shell-v1').then(function(cache){
+      caches.open('medistudy-shell-v2').then(function(cache){
         var tryNext = function(i){
           if(i >= urls.length) return;
           cache.match(urls[i]).then(function(resp){
@@ -1761,7 +1761,7 @@ document.getElementById('pwa-manifest-link').href = manifestURL;
 // Strategy: Cache the app shell directly from the page
 // No blob SW tricks — use Cache API directly
 // ═══════════════════════════════════════════════════
-const MS_CACHE = 'medistudy-shell-v1';
+const MS_CACHE = 'medistudy-shell-v2';
 
 // STEP 1: When online, save the full page HTML into Cache API
 // This is the most reliable offline strategy
@@ -1771,8 +1771,8 @@ function cacheAppShell(){
     const html = '<!DOCTYPE html>' + document.documentElement.outerHTML;
     const opts = {headers:{'Content-Type':'text/html;charset=utf-8'}};
     caches.open(MS_CACHE).then(cache => {
-      // Cache under multiple URL keys so any variation hits the cache
-      [location.href, location.origin+'/', location.origin+'/index.html'].forEach(url => {
+      // Cache under the exact current URL — works for any hosting path
+      [location.href, location.href.replace(/\/[^\/]*$/, '/'), location.href.replace(/\/[^\/]*$/, '/index.html')].forEach(url => {
         cache.put(url, new Response(html, opts));
       });
     }).catch(()=>{});
@@ -1782,7 +1782,9 @@ function cacheAppShell(){
 // STEP 2: Register the external sw.js service worker
 // sw.js must be deployed alongside index.html in your repo root
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('/sw.js', {scope:'/'})
+  // Auto-detect base path (works on GitHub Pages /medistudy/ and any domain)
+  const _base = location.pathname.replace(/\/[^\/]*$/, '/');
+  navigator.serviceWorker.register(_base + 'sw.js', {scope: _base})
     .then(reg=>{
       console.log('[MediStudy] SW registered, scope:', reg.scope);
       // Force immediate activation of any waiting SW
