@@ -167,7 +167,15 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 .pdf-frame{flex:1;border:none;width:100%;background:#fff;}
 .pdf-no-embed{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;}
 .pdf-no-embed p{font-size:13px;color:var(--muted);line-height:1.7;}
-.open-drive-btn{padding:10px 24px;border-radius:10px;background:var(--blue);color:#fff;border:none;cursor:pointer;font-size:14px;font-weight:700;text-decoration:none;display:inline-block;}
+/* PDF.js canvas viewer */
+#pdf-canvas-container{flex:1;overflow-y:auto;overflow-x:hidden;background:#525659;display:none;-webkit-overflow-scrolling:touch;}
+#pdf-canvas-container canvas{display:block;margin:8px auto;box-shadow:0 2px 8px rgba(0,0,0,.5);max-width:100%;}
+.pdf-progress-bar{height:3px;background:var(--green);width:0%;transition:width .3s;position:absolute;top:0;left:0;right:0;}
+.pdf-nav-bar{background:var(--surface);border-top:1px solid var(--border);padding:8px 14px;display:none;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0;}
+.pdf-nav-bar.visible{display:flex;}
+.pdf-nav-btn{padding:6px 16px;border-radius:8px;background:var(--surface2);color:var(--text);border:1px solid var(--border);cursor:pointer;font-size:13px;font-weight:600;}
+.pdf-nav-btn:disabled{opacity:.35;cursor:default;}
+#pdf-page-info{font-size:12px;color:var(--muted);}
 .planner-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
 .planner-stat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center;}
 .ps-val{font-family:var(--serif);font-size:32px;font-weight:900;color:var(--accent);line-height:1;}
@@ -438,6 +446,8 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="MediStudy">
   <link rel="apple-touch-icon" href="https://img.icons8.com/fluency/96/stethoscope.png">
+  <!-- PDF.js for reliable cross-platform PDF rendering -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
 <nav>
@@ -700,21 +710,33 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 
 <!-- PDF VIEWER -->
 <div class="pdf-overlay" id="pdf-overlay">
-  <div class="pdf-viewer-bar">
+  <div class="pdf-viewer-bar" style="position:relative;">
+    <div class="pdf-progress-bar" id="pdf-progress-bar"></div>
     <button class="pdf-close-btn" onclick="closePDF()">✕ Close</button>
     <span class="pdf-title" id="pdf-title"></span>
     <button class="pdf-save-bar-btn" id="pdf-save-bar-btn" onclick="toggleSaveFromViewer()">💾 Save Offline</button>
   </div>
   <div class="pdf-loading" id="pdf-loading" style="display:none;">
     <div class="pdf-loading-spinner"></div>
-    <span style="font-size:12px;color:var(--muted);">Opening document...</span>
+    <span id="pdf-loading-msg" style="font-size:12px;color:var(--muted);">Opening document...</span>
   </div>
-  <iframe class="pdf-frame" id="pdf-frame" allowfullscreen></iframe>
+  <!-- PDF.js canvas renderer -->
+  <div id="pdf-canvas-container"></div>
+  <!-- Fallback iframe for Drive preview -->
+  <iframe class="pdf-frame" id="pdf-frame" allowfullscreen style="display:none;"></iframe>
   <div class="pdf-no-embed" id="pdf-no-embed" style="display:none;">
     <div style="font-size:56px;">📄</div>
     <h3 style="font-family:var(--serif);font-size:20px;font-weight:700;color:var(--accent);margin-bottom:8px;">Cannot Open</h3>
-    <p style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:20px;">This note cannot be displayed in offline mode.<br>Save it first while online to read offline.</p>
-    <button class="pdf-close-btn" onclick="closePDF()" style="font-size:14px;padding:10px 24px;">← Go Back</button>
+    <p id="pdf-no-embed-msg" style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:20px;">This note cannot be displayed in offline mode.<br>Save it first while online to read offline.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">
+      <button class="pdf-close-btn" onclick="closePDF()" style="font-size:14px;padding:10px 24px;">← Go Back</button>
+    </div>
+  </div>
+  <!-- Page navigation bar -->
+  <div class="pdf-nav-bar" id="pdf-nav-bar">
+    <button class="pdf-nav-btn" id="pdf-prev-btn" onclick="pdfPrevPage()" disabled>◀ Prev</button>
+    <span id="pdf-page-info">Page 1 of 1</span>
+    <button class="pdf-nav-btn" id="pdf-next-btn" onclick="pdfNextPage()">Next ▶</button>
   </div>
 </div>
 <!-- ADMIN MODAL -->
@@ -1006,84 +1028,206 @@ function addChatMsg(role,text){
 }
 function fmt(t){return t.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\*(.*?)\*/g,'<em>$1</em>').replace(/\n/g,'<br>');}
 
-// ═══════════════ PDF VIEWER ═══════════════
-function openPDF(note){
-  currentPDF=note;
-  document.getElementById('pdf-title').textContent=note.topic;
-  document.getElementById('pdf-overlay').classList.add('open');
-  const frame=document.getElementById('pdf-frame');
-  const noEmbed=document.getElementById('pdf-no-embed');
-  const loading=document.getElementById('pdf-loading');
+// ═══════════════ PDF VIEWER (PDF.js) ═══════════════
+let pdfJsDoc=null, pdfCurrentPage=1, pdfTotalPages=0, pdfRendering=false, pdfBlobUrl=null;
 
-  // Build embed URL
-  let embedUrl=note.link;
-  const m=note.link.match(/\/d\/([a-zA-Z0-9_-]+)/);
-  if(m) embedUrl=`https://drive.google.com/file/d/${m[1]}/preview`;
-  else if(note.link.includes('open?id=')) embedUrl=`https://drive.google.com/file/d/${note.link.split('id=')[1]}/preview`;
+// Configure PDF.js worker
+if(typeof pdfjsLib!=='undefined'){
+  pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
 
-  frame.style.display='none';
-  noEmbed.style.display='none';
-  loading.style.display='flex';
+function _pdfSetProgress(pct){
+  document.getElementById('pdf-progress-bar').style.width=pct+'%';
+}
+function _pdfShowLoading(msg){
+  document.getElementById('pdf-loading').style.display='flex';
+  document.getElementById('pdf-loading-msg').textContent=msg||'Opening document...';
+  document.getElementById('pdf-canvas-container').style.display='none';
+  document.getElementById('pdf-frame').style.display='none';
+  document.getElementById('pdf-no-embed').style.display='none';
+  document.getElementById('pdf-nav-bar').classList.remove('visible');
+}
+function _pdfShowCanvas(){
+  document.getElementById('pdf-loading').style.display='none';
+  document.getElementById('pdf-canvas-container').style.display='block';
+  document.getElementById('pdf-frame').style.display='none';
+  document.getElementById('pdf-no-embed').style.display='none';
+  document.getElementById('pdf-nav-bar').classList.add('visible');
+  _pdfSetProgress(100);
+  setTimeout(()=>_pdfSetProgress(0),600);
+}
+function _pdfShowFallbackIframe(url){
+  document.getElementById('pdf-loading').style.display='none';
+  document.getElementById('pdf-canvas-container').style.display='none';
+  document.getElementById('pdf-frame').src=url;
+  document.getElementById('pdf-frame').style.display='block';
+  document.getElementById('pdf-no-embed').style.display='none';
+  document.getElementById('pdf-nav-bar').classList.remove('visible');
+  _pdfSetProgress(0);
+}
+function _pdfShowError(msg){
+  document.getElementById('pdf-loading').style.display='none';
+  document.getElementById('pdf-canvas-container').style.display='none';
+  document.getElementById('pdf-frame').style.display='none';
+  document.getElementById('pdf-no-embed').style.display='flex';
+  document.getElementById('pdf-nav-bar').classList.remove('visible');
+  if(msg) document.getElementById('pdf-no-embed-msg').innerHTML=msg;
+  _pdfSetProgress(0);
+}
 
-  if(!navigator.onLine){
-    getPdfBlob(note.id).then(blob=>{
-      loading.style.display='none';
-      if(blob){
-        const blobUrl=URL.createObjectURL(blob);
-        frame.src=blobUrl;
-        frame.style.display='block';
-        frame.onload=()=>{ /* loaded fine */ };
-      } else {
-        noEmbed.style.display='flex';
-        const p=noEmbed.querySelector('p');
-        if(p) p.innerHTML='You are offline.<br>Open this note while online and tap <strong>💾 Save Offline</strong> to read anytime without internet.';
-      }
-    });
-    updatePDFSaveBtn(note.id);
+async function _renderPdfFromBlob(blob){
+  // Revoke any previous blob URL
+  if(pdfBlobUrl){ URL.revokeObjectURL(pdfBlobUrl); pdfBlobUrl=null; }
+  pdfBlobUrl=URL.createObjectURL(blob);
+
+  if(typeof pdfjsLib==='undefined'){
+    // PDF.js not loaded yet — fallback to iframe with blob
+    _pdfShowFallbackIframe(pdfBlobUrl);
     return;
   }
 
-  // Online — load Drive preview
-  // Simple approach: just load iframe, show after 5s regardless
-  frame.src=embedUrl;
-  // Show frame after short delay — Drive preview always loads eventually
-  const showTimer = setTimeout(()=>{
-    loading.style.display='none';
-    frame.style.display='block';
-  }, 2500);
+  try{
+    _pdfSetProgress(30);
+    const arrayBuf=await blob.arrayBuffer();
+    _pdfSetProgress(60);
+    pdfJsDoc=await pdfjsLib.getDocument({data:arrayBuf}).promise;
+    pdfTotalPages=pdfJsDoc.numPages;
+    pdfCurrentPage=1;
+    _pdfSetProgress(80);
+    await _renderPage(pdfCurrentPage);
+    _pdfShowCanvas();
+    _updateNavBar();
+  }catch(e){
+    console.warn('PDF.js render failed:',e);
+    // Fallback: show blob in iframe
+    _pdfShowFallbackIframe(pdfBlobUrl);
+  }
+}
 
-  frame.onload=()=>{
-    clearTimeout(showTimer);
-    loading.style.display='none';
-    frame.style.display='block';
-  };
-  frame.onerror=()=>{
-    clearTimeout(showTimer);
-    loading.style.display='none';
-    noEmbed.style.display='flex';
-  };
+async function _renderPage(num){
+  if(!pdfJsDoc||pdfRendering) return;
+  pdfRendering=true;
+  const container=document.getElementById('pdf-canvas-container');
+  container.innerHTML='';
+  const page=await pdfJsDoc.getPage(num);
+  const vw=Math.min(window.innerWidth, 800);
+  const viewport=page.getViewport({scale: vw/page.getViewport({scale:1}).width});
+  const canvas=document.createElement('canvas');
+  canvas.width=viewport.width;
+  canvas.height=viewport.height;
+  container.appendChild(canvas);
+  await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+  container.scrollTop=0;
+  pdfRendering=false;
+}
+
+async function pdfPrevPage(){
+  if(pdfCurrentPage<=1)return;
+  pdfCurrentPage--;
+  await _renderPage(pdfCurrentPage);
+  _updateNavBar();
+}
+async function pdfNextPage(){
+  if(pdfCurrentPage>=pdfTotalPages)return;
+  pdfCurrentPage++;
+  await _renderPage(pdfCurrentPage);
+  _updateNavBar();
+}
+function _updateNavBar(){
+  document.getElementById('pdf-page-info').textContent=`Page ${pdfCurrentPage} of ${pdfTotalPages}`;
+  document.getElementById('pdf-prev-btn').disabled=pdfCurrentPage<=1;
+  document.getElementById('pdf-next-btn').disabled=pdfCurrentPage>=pdfTotalPages;
+}
+
+async function openPDF(note){
+  currentPDF=note;
+  document.getElementById('pdf-title').textContent=note.topic;
+  document.getElementById('pdf-overlay').classList.add('open');
+  pdfJsDoc=null; pdfCurrentPage=1; pdfTotalPages=0; pdfRendering=false;
+
+  const m=note.link.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  const fileId=m?m[1]:null;
+  const drivePreviewUrl=fileId?`https://drive.google.com/file/d/${fileId}/preview`:note.link;
 
   updatePDFSaveBtn(note.id);
+
+  // ── STEP 1: Check IndexedDB first (works offline AND saves data online) ──
+  _pdfShowLoading('Checking saved copy...');
+  _pdfSetProgress(10);
+  const cachedBlob=await getPdfBlob(note.id);
+
+  if(cachedBlob){
+    _pdfShowLoading('Opening saved copy...');
+    await _renderPdfFromBlob(cachedBlob);
+    return;
+  }
+
+  // ── STEP 2: Offline + no cache = show error ──
+  if(!navigator.onLine){
+    _pdfShowError('You are offline.<br>Open this note while online and tap <strong>💾 Save Offline</strong> to read anytime.');
+    return;
+  }
+
+  // ── STEP 3: Online, no cache — try to download PDF for PDF.js rendering ──
+  _pdfShowLoading('Downloading PDF...');
+  _pdfSetProgress(20);
+
+  if(fileId){
+    // Try direct download via Drive export (best for PDF.js)
+    const downloadUrl=`https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`;
+    try{
+      const resp=await fetch(downloadUrl,{mode:'cors'});
+      if(resp.ok){
+        const blob=await resp.blob();
+        if(blob.type.includes('pdf')||blob.size>1000){
+          // Great — render with PDF.js and also cache it automatically
+          _pdfShowLoading('Rendering PDF...');
+          await _renderPdfFromBlob(blob);
+          // Cache in background for future offline/data-saving use
+          savePdfBlobDirect(note.id, blob).then(()=>updatePDFSaveBtn(note.id));
+          return;
+        }
+      }
+    }catch(e){ console.warn('Direct PDF download failed, falling back to iframe',e); }
+  }
+
+  // ── STEP 4: Last resort — Drive preview iframe ──
+  _pdfShowLoading('Loading preview...');
+  _pdfShowFallbackIframe(drivePreviewUrl);
+  // If iframe takes too long, show error with Save Offline suggestion
+  const frame=document.getElementById('pdf-frame');
+  let iframeTimer=setTimeout(()=>{
+    // Still show the frame but also show a subtle hint
+    const loadingEl=document.getElementById('pdf-loading');
+    if(loadingEl) loadingEl.style.display='none';
+  },5000);
+  frame.onload=()=>clearTimeout(iframeTimer);
 }
+
 function closePDF(){
   document.getElementById('pdf-overlay').classList.remove('open');
-  const src=document.getElementById('pdf-frame').src;
-  if(src&&src.startsWith('blob:')) URL.revokeObjectURL(src);
+  // Cleanup
+  if(pdfBlobUrl){ URL.revokeObjectURL(pdfBlobUrl); pdfBlobUrl=null; }
   document.getElementById('pdf-frame').src='';
   document.getElementById('pdf-frame').style.display='none';
+  document.getElementById('pdf-canvas-container').innerHTML='';
+  document.getElementById('pdf-canvas-container').style.display='none';
   document.getElementById('pdf-loading').style.display='none';
   document.getElementById('pdf-no-embed').style.display='none';
+  document.getElementById('pdf-nav-bar').classList.remove('visible');
+  _pdfSetProgress(0);
+  pdfJsDoc=null; pdfCurrentPage=1; pdfTotalPages=0; pdfRendering=false;
   currentPDF=null;
 }
+
 function updatePDFSaveBtn(id){
   const btn=document.getElementById('pdf-save-bar-btn');
   const isSaved=savedNotes.some(s=>s.id===id);
   if(isSaved){
-    btn.textContent='⏳ Saving...';
+    btn.textContent='⏳ Checking...';
     btn.className='pdf-save-bar-btn saved-bar';
-    // Check if blob is actually downloaded
-    hasPdfBlob(id).then(has => {
-      btn.textContent = has ? '✅ Saved Offline' : '⏳ Downloading...';
+    hasPdfBlob(id).then(has=>{
+      btn.textContent=has?'✅ Saved Offline':'⏳ Downloading...';
     });
   } else {
     btn.textContent='💾 Save Offline';
@@ -1098,33 +1242,29 @@ function toggleSaveNote(note){
     deletePdfBlob(note.id);
   } else {
     savedNotes.push({...note, savedAt:Date.now()});
-    // Try to download PDF blob for true offline access
-    // Google Drive direct download (CORS-friendly endpoint)
-    const m = note.link.match(/\/d\/([a-zA-Z0-9_-]+)/);
-    const fileId = m ? m[1] : null;
-    if(fileId){
-      // Use a CORS proxy approach — fetch the preview page which embeds the PDF
-      const urls = [
-        `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`,
-        `https://drive.google.com/file/d/${fileId}/preview`
-      ];
-      // Try each URL
-      const tryFetch = (i) => {
-        if(i >= urls.length) return;
-        savePdfBlob(note.id, urls[i]).then(ok => {
-          if(!ok) tryFetch(i+1);
-          else {
-            // Update save button to show downloaded
-            const btn = document.getElementById('pdf-save-bar-btn');
-            if(btn && btn.className.includes('saved')) btn.textContent = '✅ Saved Offline';
-          }
-        });
-      };
-      tryFetch(0);
+    const m=note.link.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    const fileId=m?m[1]:null;
+    const _updateSaveBtn=()=>{
+      const btn=document.getElementById('pdf-save-bar-btn');
+      if(btn&&btn.className.includes('saved')) btn.textContent='✅ Saved Offline';
+    };
+    // If the PDF viewer already has this blob in memory (user tapped Save while viewing),
+    // reuse it — no extra download needed!
+    if(currentPDF&&currentPDF.id===note.id&&pdfBlobUrl){
+      fetch(pdfBlobUrl).then(r=>r.blob()).then(blob=>{
+        savePdfBlobDirect(note.id,blob).then(ok=>{ if(ok) _updateSaveBtn(); });
+      }).catch(()=>_tryDownloadAndSave(note.id,fileId,_updateSaveBtn));
+    } else {
+      _tryDownloadAndSave(note.id,fileId,_updateSaveBtn);
     }
   }
   saveSaved();
   if(document.getElementById('page-saved').classList.contains('active'))renderSaved();
+}
+function _tryDownloadAndSave(noteId,fileId,onDone){
+  if(!fileId) return;
+  const url=`https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`;
+  savePdfBlob(noteId,url).then(ok=>{ if(ok&&onDone) onDone(); });
 }
 function isNoteSaved(id){return savedNotes.some(s=>s.id===id);}
 
@@ -2025,6 +2165,18 @@ async function savePdfBlob(noteId, url){
       tx.onerror = () => res(false);
     });
   } catch(e){ return false; }
+}
+// Save a blob object directly (no fetch needed — already have the data)
+async function savePdfBlobDirect(noteId, blob){
+  try{
+    const db=await openPdfDB();
+    return new Promise(res=>{
+      const tx=db.transaction(PDF_STORE,'readwrite');
+      tx.objectStore(PDF_STORE).put({id:noteId, blob, savedAt:Date.now()});
+      tx.oncomplete=()=>res(true);
+      tx.onerror=()=>res(false);
+    });
+  }catch(e){return false;}
 }
 async function getPdfBlob(noteId){
   try {
