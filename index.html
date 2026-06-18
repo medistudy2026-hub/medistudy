@@ -873,11 +873,23 @@ function toggleSaveVideo(video){
 }
 
 // ═══════════════ FIREBASE ═══════════════
+let _fbSDKState = null; // null=not started, Array=loading, true=done
 function loadFirebaseSDK(cb){
-  if(window.firebase){cb();return;}
+  if(_fbSDKState === true || (window.firebase && window.firebase.database)){cb();return;}
+  if(Array.isArray(_fbSDKState)){_fbSDKState.push(cb);return;}
+  _fbSDKState = [cb];
   const s=document.createElement('script');
   s.src='https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js';
-  s.onload=()=>{const s2=document.createElement('script');s2.src='https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js';s2.onload=cb;document.head.appendChild(s2);};
+  s.onload=()=>{
+    const s2=document.createElement('script');
+    s2.src='https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js';
+    s2.onload=()=>{
+      const pending=_fbSDKState;
+      _fbSDKState=true;
+      pending.forEach(fn=>fn());
+    };
+    document.head.appendChild(s2);
+  };
   document.head.appendChild(s);
 }
 function connectFirebase(){
