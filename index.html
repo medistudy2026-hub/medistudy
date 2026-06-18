@@ -948,7 +948,7 @@ function goPage(id){
   if(id==='search')document.getElementById('search-input').focus();
   if(id==='quicknotes')renderQNotes();
   if(id==='progress')renderProgress();
-  if(id==='chat')initBatchChat();
+  if(id==='chat'){chatInitAttempts=0;initBatchChat();}
 }
 
 // ═══════════════ SEARCH ═══════════════
@@ -2428,6 +2428,7 @@ function delProgTopic(subjectId,topicId){
 let chatUserName = localStorage.getItem('ms_chat_name') || '';
 let batchChatListener = null;
 let chatInitAttempts = 0;
+let chatInitTimer = null;
 
 function showChatEl(which){
   ['chat-name-setup','chat-offline-notice','batch-chat-box','chat-loading'].forEach(id=>{
@@ -2439,43 +2440,56 @@ function showChatEl(which){
 }
 
 function initBatchChat(){
-  chatInitAttempts++;
+  // Reset counter each time user opens the chat page fresh
+  // (only the retry chain inside increments it)
+  if(chatInitAttempts === 0){
+    // Clear any pending retry timer from a previous visit
+    if(chatInitTimer){ clearTimeout(chatInitTimer); chatInitTimer=null; }
+  }
 
   // Offline
   if(!navigator.onLine){
+    chatInitAttempts = 0;
     showChatEl('chat-offline-notice'); return;
   }
 
   // Firebase ready
   if(fbConnected && db){
     chatInitAttempts = 0;
+    if(chatInitTimer){ clearTimeout(chatInitTimer); chatInitTimer=null; }
     if(!chatUserName){
       showChatEl('chat-name-setup');
     } else {
       showChatEl('batch-chat-box');
-      document.getElementById('batch-msgs').style.display='flex';
-      document.getElementById('batch-msgs').style.flexDirection='column';
       document.getElementById('batch-chat-name-display').textContent='💬 '+chatUserName;
       startBatchChatListener();
     }
     return;
   }
 
-  // Firebase not ready yet — show loading and wait
+  // Firebase not ready yet — show loading and try to connect
   showChatEl('chat-loading');
 
-  // Try to init Firebase
-  if(typeof initFirebase === 'function'){
-    initFirebase(()=>{
-      if(fbConnected && db){ initBatchChat(); return; }
-    });
+  if(chatInitAttempts === 0){
+    // First attempt: kick off Firebase init
+    if(typeof initFirebase === 'function'){
+      initFirebase(()=>{
+        if(fbConnected && db){ chatInitAttempts=0; initBatchChat(); }
+      });
+    }
   }
 
-  // Retry every 2 seconds, max 5 times
+  chatInitAttempts++;
+
   if(chatInitAttempts <= 5){
-    setTimeout(()=>{ if(!fbConnected) initBatchChat(); }, 2000);
+    chatInitTimer = setTimeout(()=>{
+      chatInitTimer = null;
+      if(!fbConnected) initBatchChat();
+      else { chatInitAttempts=0; initBatchChat(); }
+    }, 2000);
   } else {
     chatInitAttempts = 0;
+    chatInitTimer = null;
     showChatEl('chat-offline-notice');
   }
 }
