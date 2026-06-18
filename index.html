@@ -2521,19 +2521,24 @@ function changeChatName(){
   initBatchChat();
 }
 
+let _chatRef = null; // store the exact ref used for .on() so .off() works correctly
 function startBatchChatListener(){
   if(!db) return;
-  // Remove old listener first
-  if(batchChatListener){
-    try{ db.ref('medistudy_chat').off('value', batchChatListener); }catch(e){}
+  // Remove old listener using the SAME ref object
+  if(batchChatListener && _chatRef){
+    try{ _chatRef.off('value', batchChatListener); }catch(e){}
     batchChatListener=null;
+    _chatRef=null;
   }
   const msgEl=document.getElementById('batch-msgs');
   msgEl.innerHTML='<div style="text-align:center;padding:20px;font-size:13px;color:var(--muted)">Loading messages...</div>';
 
-  batchChatListener = db.ref('medistudy_chat').limitToLast(50).on('value', snap=>{
+  _chatRef = db.ref('medistudy_chat').limitToLast(50);
+  batchChatListener = _chatRef.on('value', snap=>{
     const msgs=[];
-    snap.forEach(c=>msgs.push(c.val()));
+    if(snap && snap.exists()){
+      snap.forEach(c=>{ const v=c.val(); if(v&&v.text)msgs.push(v); });
+    }
     if(!msgs.length){
       msgEl.innerHTML='<div style="text-align:center;padding:40px;font-size:13px;color:var(--muted)">No messages yet. Say hello! 👋</div>';
       return;
@@ -2549,7 +2554,7 @@ function startBatchChatListener(){
     }).join('');
     msgEl.scrollTop=msgEl.scrollHeight;
   }, err=>{
-    // Firebase error — show offline notice
+    console.error('Chat listener error:', err);
     msgEl.innerHTML='<div style="text-align:center;padding:20px;font-size:13px;color:#e85d38">⚠️ Connection lost. Check internet.</div>';
   });
 }
@@ -2561,12 +2566,23 @@ function sendBatchMsg(){
   if(!fbConnected||!db){
     showOfflineToast('📡 No connection — cannot send message',false); return;
   }
-  // Optimistic send
   inp.value='';
+  // Optimistic UI: show message immediately before Firebase echoes it back
+  const msgEl=document.getElementById('batch-msgs');
+  const time=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const tempDiv=document.createElement('div');
+  tempDiv.className='batch-msg mine';
+  tempDiv.innerHTML=`<div class="batch-msg-name">You</div><div class="batch-msg-bubble">${escapeHTML(text)}</div><div class="batch-msg-time">${time}</div>`;
+  // Remove "no messages" placeholder if present
+  if(msgEl.children.length===1 && msgEl.children[0].style.textAlign==='center') msgEl.innerHTML='';
+  msgEl.appendChild(tempDiv);
+  msgEl.scrollTop=msgEl.scrollHeight;
+
   db.ref('medistudy_chat').push({
     name:chatUserName, text, ts:Date.now()
   }).catch(()=>{
-    inp.value=text; // restore if failed
+    inp.value=text;
+    tempDiv.remove();
     showOfflineToast('❌ Failed to send — try again',false);
   });
 }
