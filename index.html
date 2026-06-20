@@ -989,7 +989,7 @@ function doSearch(q){
 }
 
 // ═══════════════ AI CHAT ═══════════════
-const GROQ_KEY='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';
+const WORKER_URL='https://calm-lake-2eaf.medistudy2026.workers.dev';
 const SYSTEM=`You are MediBot, an expert MBBS tutor. Cover all subjects: Anatomy, Physiology, Biochemistry, Pathology, Pharmacology, Microbiology, Medicine, Surgery, OBG, Paediatrics, ENT, Ophthalmology. Explain simply with bullet points and bold key terms. Add mnemonics. For MCQs give 4 options with correct answer and explanation. Be encouraging and exam-focused.`;
 function chatKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}}
 async function sendQ(q){goPage('tutor');document.getElementById('chat-input').value=q;await sendMsg();}
@@ -1004,12 +1004,13 @@ async function sendMsg(){
   document.getElementById('chat-msgs').appendChild(td);
   document.getElementById('chat-msgs').scrollTop=9999;
   try{
-    const activeKey = window.RUNTIME_GROQ_KEY || GROQ_KEY;
-    const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+    // Send a user ID so Worker can track per-user limits
+    const userId = localStorage.getItem('ms_chat_name') || localStorage.getItem('ms_user_id') || 'guest';
+    const res=await fetch(WORKER_URL,{
       method:'POST',
       headers:{
         'Content-Type':'application/json',
-        'Authorization':'Bearer '+activeKey
+        'X-User-ID': userId
       },
       body:JSON.stringify({
         model:'llama-3.3-70b-versatile',
@@ -1498,7 +1499,7 @@ function showPanel(){
   }
   const savedGK=localStorage.getItem('ms4_groq_key');
   if(savedGK){document.getElementById('gemini-key-input').value=savedGK;document.getElementById('gemini-key-status').innerHTML='<span style="color:var(--green)">✅ Groq key active — AI Tutor working!</span>';}
-  else{document.getElementById('gemini-key-input').value=GROQ_KEY;document.getElementById('gemini-key-status').innerHTML='<span style="color:var(--green)">✅ Default key active — AI Tutor working!</span>';}
+  else{document.getElementById('gemini-key-input').value='';document.getElementById('gemini-key-status').innerHTML='<span style="color:var(--green)">✅ Secure Worker active — AI Tutor working!</span>';}
 }
 function switchATab(tab,el){
   document.querySelectorAll('.atab').forEach(t=>t.classList.remove('active'));
@@ -1671,7 +1672,7 @@ function saveGeminiKey(){
     return;
   }
   localStorage.setItem('ms4_groq_key', key);
-  window.RUNTIME_GROQ_KEY = key;
+  // Key now managed by Cloudflare Worker
   document.getElementById('gemini-key-status').innerHTML='<span style="color:var(--green)">✅ Key saved! AI Tutor is active.</span>';
 }
 
@@ -2145,7 +2146,34 @@ window.toggleSaveNote = function(note) {
 // Track AI chat usage
 const originalSendMsg = sendMsg;
 window.sendMsg = async function() {
-  gtag('event', 'ai_question_asked', { event_category: 'AI Tutor' });
+  // ── Daily limit: 15 questions per day ──
+  const today = new Date().toDateString();
+  const limitKey = 'ms_medibot_' + today;
+  const count = parseInt(localStorage.getItem(limitKey) || '0');
+  const DAILY_LIMIT = 15;
+
+  if(count >= DAILY_LIMIT){
+    // Show limit message in chat
+    const w = document.getElementById('chat-welcome');
+    if(w) w.remove();
+    addChatMsg('ai', '⚠️ **Daily limit reached!** You have used all ' + DAILY_LIMIT + ' MediBot questions for today. Your limit resets at midnight. Use this time to revise what you've learned! 📚');
+    return;
+  }
+
+  // Increment count
+  localStorage.setItem(limitKey, count + 1);
+
+  // Show remaining count if getting low
+  if(count >= 10){
+    const remaining = DAILY_LIMIT - count - 1;
+    if(remaining >= 0){
+      setTimeout(()=>{
+        addChatMsg('ai', '💡 *(' + remaining + ' MediBot question' + (remaining===1?'':'s') + ' remaining today)*');
+      }, 100);
+    }
+  }
+
+  gtag('event', 'ai_question_asked', { event_category: 'AI Tutor', value: count + 1 });
   return originalSendMsg();
 };
 
