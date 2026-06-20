@@ -949,7 +949,7 @@ function toggleSaveVideo(video){
 // ═══════════════ FIREBASE ═══════════════
 let _fbSDKState = null; // null=not started, Array=loading, true=done
 function loadFirebaseSDK(cb){
-  if(_fbSDKState === true || (window.firebase && window.firebase.database)){cb();return;}
+  if(_fbSDKState === true || (window.firebase && window.firebase.database && window.firebase.auth)){cb();return;}
   if(Array.isArray(_fbSDKState)){_fbSDKState.push(cb);return;}
   _fbSDKState = [cb];
   const s=document.createElement('script');
@@ -981,6 +981,8 @@ function connectFirebase(){
   initFirebase(()=>{flashSuccess('fb-success','✅ Firebase connected!');updateFBStatus();updateHomeBanner();});
 }
 let auth=null, currentUser=null, authReady=false;
+// Fallback: if Firebase Auth doesn't load in 8s, unlock all pages anyway
+setTimeout(()=>{ if(!authReady){ authReady=true; } }, 8000);
 
 function initFirebase(cb){
   if(!fbConfig){updateFBStatus();return;}
