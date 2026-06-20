@@ -980,7 +980,7 @@ function connectFirebase(){
   localStorage.setItem('ms4_fbconfig',JSON.stringify(fbConfig));
   initFirebase(()=>{flashSuccess('fb-success','✅ Firebase connected!');updateFBStatus();updateHomeBanner();});
 }
-let auth=null, currentUser=null;
+let auth=null, currentUser=null, authReady=false;
 
 function initFirebase(cb){
   if(!fbConfig){updateFBStatus();return;}
@@ -993,6 +993,7 @@ function initFirebase(cb){
         auth=firebase.auth();
         auth.onAuthStateChanged(function(user){
           currentUser=user;
+          authReady=true;
           updateAuthUI();
         });
       }
@@ -1038,7 +1039,7 @@ applyTheme();
 const LOGIN_GATED={'tutor':'MediBot AI','chat':'Batch Chat','planner':'Planner','progress':'Progress Tracker'};
 function goPage(id){
   // Gate check for protected pages
-  if(LOGIN_GATED[id] && !currentUser){
+  if(authReady && LOGIN_GATED[id] && !currentUser){
     openLoginModal('Sign in to use '+LOGIN_GATED[id]);
     return;
   }
@@ -2142,8 +2143,9 @@ function getInitials(name){
 }
 
 function updateProfileUI(){
-  // If auth is active, let updateAuthUI handle it
-  if(typeof updateAuthUI === 'function' && auth){ updateAuthUI(); return; }
+  // If auth is ready, let updateAuthUI handle profile modal display
+  if(authReady){ updateAuthUI(); }
+  // Still update avatar button regardless
   const initials = getInitials(userProfile.name);
   const btn = document.getElementById('profile-avatar-btn');
   if(btn) btn.textContent = userProfile.name ? initials : '👤';
@@ -2293,6 +2295,7 @@ function updateAuthUI(){
   const loggedOutView=document.getElementById('profile-loggedout-view');
   const loggedInView=document.getElementById('profile-view');
   const authEmailEl=document.getElementById('profile-auth-email');
+  if(!loggedOutView||!loggedInView)return; // DOM not ready
 
   if(currentUser){
     // Logged in
