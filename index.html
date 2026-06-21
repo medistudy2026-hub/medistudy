@@ -464,6 +464,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
     <button class="nav-tab" onclick="goPage('quicknotes')">📝</button>
     <button class="nav-tab" onclick="goPage('progress')">📊</button>
     <button class="nav-tab" onclick="goPage('chat')">💬</button>
+    <button class="nav-tab" onclick="goPage('quiz')">🧠</button>
     <button class="nav-tab" onclick="goPage('about')">👤</button>  </div>
   <div class="nav-right">
     <button class="theme-btn" id="theme-btn" onclick="toggleTheme()">🌙</button>
@@ -724,7 +725,49 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
   </div>
 </div>
 
-<!-- PDF VIEWER -->
+<!-- QUIZ PAGE -->
+<div class="page" id="page-quiz">
+  <div class="sec-title">🧠 MCQ <em>Quiz</em></div>
+  <div class="sec-sub">Test your knowledge subject-wise</div>
+
+  <!-- Quiz home — pick a set -->
+  <div id="quiz-home">
+    <div id="quiz-sets-list" style="margin-top:8px;"></div>
+    <div id="quiz-empty" style="display:none;text-align:center;padding:40px 20px;color:var(--muted);">
+      <div style="font-size:40px;margin-bottom:10px;">📭</div>
+      <div style="font-size:14px;">No quiz sets yet.<br>Ask your admin to add some!</div>
+    </div>
+  </div>
+
+  <!-- Active quiz -->
+  <div id="quiz-active" style="display:none;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div style="font-size:12px;color:var(--muted);" id="quiz-progress-label">Question 1 of 10</div>
+      <button onclick="exitQuiz()" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;color:var(--muted);cursor:pointer;">✕ Exit</button>
+    </div>
+    <div style="background:var(--card);border-radius:10px;height:5px;margin-bottom:16px;overflow:hidden;">
+      <div id="quiz-progress-bar" style="height:100%;background:var(--accent);transition:width 0.3s;width:0%;"></div>
+    </div>
+    <div class="card" style="margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:600;line-height:1.6;" id="quiz-question"></div>
+    </div>
+    <div id="quiz-options" style="display:flex;flex-direction:column;gap:8px;"></div>
+    <div id="quiz-explanation" style="display:none;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:10px;font-size:12px;line-height:1.6;"></div>
+    <button id="quiz-next-btn" onclick="nextQuestion()" style="display:none;width:100%;margin-top:12px;" class="submit-btn">Next →</button>
+  </div>
+
+  <!-- Quiz result -->
+  <div id="quiz-result" style="display:none;text-align:center;padding:20px 0;">
+    <div style="font-size:56px;margin-bottom:8px;" id="quiz-result-emoji">🎉</div>
+    <div style="font-size:22px;font-weight:700;font-family:var(--serif);" id="quiz-result-score"></div>
+    <div style="font-size:13px;color:var(--muted);margin:6px 0 20px;" id="quiz-result-msg"></div>
+    <button class="submit-btn" onclick="reviewQuiz()" style="margin-bottom:8px;">📋 Review Answers</button>
+    <button class="submit-btn" onclick="retryQuiz()" style="background:var(--card);color:var(--text);border:1px solid var(--border);">🔁 Try Again</button>
+    <button onclick="showQuizHome()" style="display:block;width:100%;margin-top:8px;background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;">← Back to Quiz List</button>
+    <!-- Review section -->
+    <div id="quiz-review-list" style="margin-top:16px;text-align:left;display:none;"></div>
+  </div>
+</div>
 <div class="pdf-overlay" id="pdf-overlay">
   <div class="pdf-viewer-bar" style="position:relative;">
     <div class="pdf-progress-bar" id="pdf-progress-bar"></div>
@@ -840,6 +883,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
         <div class="atab" onclick="switchATab('videos',this)">🎥 Video</div>
         <div class="atab" onclick="switchATab('manage',this)">🗑️ Manage</div>
         <div class="atab" onclick="switchATab('announce',this)">📢 Announce</div>
+        <div class="atab" onclick="switchATab('mcq',this)">🧠 MCQ</div>
         <div class="atab" onclick="switchATab('firebase',this)">🔥 Firebase</div>
       </div>
       <!-- STRUCTURE -->
@@ -910,6 +954,49 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
         <div class="section-label" style="margin-top:16px;">Active Announcements</div>
         <div id="admin-ann-list" style="font-size:12px;color:var(--muted);">Loading...</div>
       </div>
+      <!-- MCQ -->
+      <div class="aform" id="aform-mcq">
+        <div class="section-label">🧠 MCQ Generator</div>
+
+        <!-- Step 1: Paste notes -->
+        <div id="mcq-step1">
+          <div class="form-group">
+            <label>SUBJECT / TOPIC NAME</label>
+            <input type="text" id="mcq-subject" placeholder="e.g. Cardiac Cycle — Physiology">
+          </div>
+          <div class="form-group">
+            <label>PASTE YOUR NOTES HERE</label>
+            <textarea id="mcq-notes" placeholder="Paste your lecture notes, textbook content, or any study material here... AI will generate MCQs from it." style="height:140px;font-size:12px;"></textarea>
+          </div>
+          <div class="form-group">
+            <label>NUMBER OF QUESTIONS</label>
+            <select id="mcq-count" class="lb-input">
+              <option value="5">5 questions</option>
+              <option value="10" selected>10 questions</option>
+              <option value="15">15 questions</option>
+              <option value="20">20 questions</option>
+            </select>
+          </div>
+          <button class="submit-btn" onclick="generateMCQ()" id="mcq-gen-btn">🤖 Generate MCQs</button>
+          <div id="mcq-gen-status" style="font-size:12px;color:var(--muted);margin-top:8px;display:none;">⏳ AI is generating questions...</div>
+        </div>
+
+        <!-- Step 2: Review generated MCQs -->
+        <div id="mcq-step2" style="display:none;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div style="font-size:13px;font-weight:700;" id="mcq-review-title">Review Questions</div>
+            <button onclick="resetMCQGen()" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;color:var(--muted);cursor:pointer;">← Start Over</button>
+          </div>
+          <div id="mcq-review-list"></div>
+          <button class="submit-btn" onclick="publishMCQSet()" id="mcq-pub-btn" style="margin-top:10px;">✅ Publish to Students</button>
+          <div class="success-msg" id="mcq-pub-success">✅ MCQ set published!</div>
+        </div>
+
+        <!-- Existing MCQ sets -->
+        <div class="section-label" style="margin-top:16px;">Published MCQ Sets</div>
+        <div id="admin-mcq-list" style="font-size:12px;color:var(--muted);">Loading...</div>
+      </div>
+
       <!-- FIREBASE -->
       <div class="aform" id="aform-firebase">
         <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px;">
@@ -1072,7 +1159,7 @@ function toggleTheme(){isDark=!isDark;localStorage.setItem('ms_theme',isDark?'da
 applyTheme();
 
 // ═══════════════ NAVIGATION ═══════════════
-const LOGIN_GATED={'tutor':'MediBot AI','chat':'Batch Chat','planner':'Planner','progress':'Progress Tracker'};
+const LOGIN_GATED={'tutor':'MediBot AI','chat':'Batch Chat','planner':'Planner','progress':'Progress Tracker','quiz':'MCQ Quiz'};
 function goPage(id){
   // Gate check for protected pages
   if(authReady && LOGIN_GATED[id] && !currentUser){
@@ -1082,7 +1169,7 @@ function goPage(id){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
-  const map={home:0,search:1,tutor:2,material:3,videos:4,saved:5,planner:6,leaderboard:7,quicknotes:8,progress:9,chat:10,about:11};
+  const map={home:0,search:1,tutor:2,material:3,videos:4,saved:5,planner:6,leaderboard:7,quicknotes:8,progress:9,chat:10,quiz:11,about:12};
   if(map[id]!==undefined)document.querySelectorAll('.nav-tab')[map[id]].classList.add('active');
   if(id==='material'){smView={level:'courses'};renderMaterial();}
   if(id==='videos')renderVideosPage();
@@ -1093,6 +1180,7 @@ function goPage(id){
   if(id==='quicknotes')renderQNotes();
   if(id==='progress')renderProgress();
   if(id==='chat'){chatInitAttempts=0;initBatchChat();}
+  if(id==='quiz')showQuizHome();
 }
 
 // ═══════════════ SEARCH ═══════════════
@@ -1642,6 +1730,7 @@ function switchATab(tab,el){
   if(tab==='videos')updateVidSubjects();
   if(tab==='firebase')updateFBStatus();
   if(tab==='announce')loadAdminAnnouncements();
+  if(tab==='mcq')loadAdminMCQSets();
 }
 function populateAllSelects(){
   ['struct-course-sel','note-course','vid-course','struct-fcourse'].forEach(id=>{
@@ -2519,6 +2608,271 @@ function dismissAnnouncement(){
     localStorage.setItem('ms_dismissed_anns',JSON.stringify(dismissed));
   }
   banner.style.display='none';
+}
+
+// ═══════════════ MCQ SYSTEM ═══════════════
+let currentQuizSet=null, currentQuizQs=[], currentQIdx=0, quizAnswers=[], quizSelected=null;
+
+// ── Admin: Generate MCQs from notes ──
+async function generateMCQ(){
+  const subject=document.getElementById('mcq-subject').value.trim();
+  const notes=document.getElementById('mcq-notes').value.trim();
+  const count=document.getElementById('mcq-count').value;
+  if(!subject||!notes){alert('Please fill in subject and notes.');return;}
+  const btn=document.getElementById('mcq-gen-btn');
+  const status=document.getElementById('mcq-gen-status');
+  btn.disabled=true;btn.textContent='⏳ Generating...';
+  status.style.display='block';
+  const prompt=`You are an MBBS medical education expert. Based on the following study notes, generate exactly ${count} high-quality MCQ questions.
+
+SUBJECT: ${subject}
+
+NOTES:
+${notes}
+
+Return ONLY a valid JSON array with no extra text, no markdown, no backticks. Each object must have:
+- "q": question text
+- "options": array of exactly 4 strings (A, B, C, D options without the letter prefix)
+- "answer": index of correct option (0=A, 1=B, 2=C, 3=D)
+- "explanation": brief explanation of why the answer is correct (1-2 sentences)
+
+Example format:
+[{"q":"What is...?","options":["Option1","Option2","Option3","Option4"],"answer":0,"explanation":"Because..."}]`;
+
+  try{
+    const res=await fetch(WORKER_URL,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({message:prompt, systemPrompt:'You are a medical MCQ generator. Return only valid JSON arrays. No markdown, no backticks, no extra text.'})
+    });
+    const data=await res.json();
+    let text='';
+    if(data.choices&&data.choices[0]) text=data.choices[0].message.content;
+    else if(data.reply) text=data.reply;
+    // Clean and parse JSON
+    text=text.replace(/```json|```/g,'').trim();
+    const qs=JSON.parse(text);
+    if(!Array.isArray(qs)||qs.length===0)throw new Error('Invalid response');
+    showMCQReview(subject, qs);
+  }catch(e){
+    alert('Generation failed: '+e.message+'\nTry with shorter notes or fewer questions.');
+  }finally{
+    btn.disabled=false;btn.textContent='🤖 Generate MCQs';
+    status.style.display='none';
+  }
+}
+
+function showMCQReview(subject, qs){
+  document.getElementById('mcq-step1').style.display='none';
+  document.getElementById('mcq-step2').style.display='block';
+  document.getElementById('mcq-review-title').textContent='Review: '+subject+' ('+qs.length+' questions)';
+  // Store for publishing
+  window._pendingMCQ={subject, qs};
+  const list=document.getElementById('mcq-review-list');
+  list.innerHTML=qs.map((q,i)=>`
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;">
+      <div style="font-size:12px;font-weight:700;margin-bottom:8px;">Q${i+1}. ${escapeHTML(q.q)}</div>
+      ${q.options.map((o,j)=>`
+        <div style="font-size:11px;padding:4px 8px;border-radius:6px;margin-bottom:3px;${j===q.answer?'background:#052e16;color:#86efac;border:1px solid #16a34a;':'background:var(--bg);border:1px solid var(--border);'}">
+          ${['A','B','C','D'][j]}. ${escapeHTML(o)} ${j===q.answer?'✓':''}
+        </div>`).join('')}
+      <div style="font-size:11px;color:var(--muted);margin-top:6px;font-style:italic;">💡 ${escapeHTML(q.explanation||'')}</div>
+      <button onclick="deletePendingQ(${i})" style="margin-top:6px;font-size:10px;background:none;border:1px solid #e85d38;border-radius:5px;padding:2px 8px;color:#e85d38;cursor:pointer;">🗑 Remove</button>
+    </div>`).join('');
+}
+
+function deletePendingQ(i){
+  if(!window._pendingMCQ)return;
+  window._pendingMCQ.qs.splice(i,1);
+  showMCQReview(window._pendingMCQ.subject, window._pendingMCQ.qs);
+}
+
+function resetMCQGen(){
+  window._pendingMCQ=null;
+  document.getElementById('mcq-step1').style.display='block';
+  document.getElementById('mcq-step2').style.display='none';
+}
+
+function publishMCQSet(){
+  if(!db||!window._pendingMCQ){alert('Nothing to publish.');return;}
+  const {subject,qs}=window._pendingMCQ;
+  if(qs.length===0){alert('No questions to publish.');return;}
+  const id='mcq_'+Date.now();
+  const btn=document.getElementById('mcq-pub-btn');
+  btn.disabled=true;btn.textContent='Publishing...';
+  db.ref('medistudy_mcq/'+id).set({id,subject,qs,ts:Date.now(),count:qs.length})
+    .then(()=>{
+      const s=document.getElementById('mcq-pub-success');
+      s.style.display='block';setTimeout(()=>s.style.display='none',2500);
+      resetMCQGen();
+      document.getElementById('mcq-notes').value='';
+      document.getElementById('mcq-subject').value='';
+      loadAdminMCQSets();
+    })
+    .catch(e=>alert('Failed: '+e.message))
+    .finally(()=>{btn.disabled=false;btn.textContent='✅ Publish to Students';});
+}
+
+function loadAdminMCQSets(){
+  if(!db)return;
+  const el=document.getElementById('admin-mcq-list');
+  if(!el)return;
+  db.ref('medistudy_mcq').orderByChild('ts').once('value',snap=>{
+    if(!snap||!snap.exists()){el.innerHTML='<div style="color:var(--muted);">No MCQ sets published yet.</div>';return;}
+    let html='';
+    snap.forEach(c=>{
+      const m=c.val();
+      html=`<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-weight:700;font-size:12px;">📝 ${escapeHTML(m.subject)}</div>
+          <div style="font-size:11px;color:var(--muted);">${m.count} questions • ${new Date(m.ts).toLocaleDateString()}</div>
+        </div>
+        <button onclick="deleteAdminMCQ('${m.id}')" style="background:#e85d38;border:none;border-radius:5px;color:#fff;font-size:10px;padding:4px 8px;cursor:pointer;">Delete</button>
+      </div>`+html;
+    });
+    el.innerHTML=html||'<div style="color:var(--muted);">No MCQ sets yet.</div>';
+  });
+}
+
+function deleteAdminMCQ(id){
+  if(!db||!id)return;
+  if(!confirm('Delete this MCQ set?'))return;
+  db.ref('medistudy_mcq/'+id).remove().then(()=>loadAdminMCQSets());
+}
+
+// ── Student: Quiz UI ──
+function showQuizHome(){
+  document.getElementById('quiz-home').style.display='block';
+  document.getElementById('quiz-active').style.display='none';
+  document.getElementById('quiz-result').style.display='none';
+  if(!db){document.getElementById('quiz-sets-list').innerHTML='<div style="color:var(--muted);text-align:center;padding:30px;">Requires internet connection.</div>';return;}
+  document.getElementById('quiz-sets-list').innerHTML='<div style="color:var(--muted);text-align:center;padding:20px;">Loading...</div>';
+  db.ref('medistudy_mcq').orderByChild('ts').once('value',snap=>{
+    if(!snap||!snap.exists()){
+      document.getElementById('quiz-sets-list').style.display='none';
+      document.getElementById('quiz-empty').style.display='block';
+      return;
+    }
+    document.getElementById('quiz-empty').style.display='none';
+    let html='';
+    snap.forEach(c=>{
+      const m=c.val();
+      html=`<div class="card" style="margin-bottom:10px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;" onclick="startQuiz('${m.id}')">
+        <div>
+          <div style="font-weight:700;font-size:14px;">📝 ${escapeHTML(m.subject)}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px;">${m.count} questions</div>
+        </div>
+        <div style="font-size:20px;">→</div>
+      </div>`+html;
+    });
+    document.getElementById('quiz-sets-list').innerHTML=html;
+  });
+}
+
+function startQuiz(id){
+  if(!db)return;
+  db.ref('medistudy_mcq/'+id).once('value',snap=>{
+    if(!snap||!snap.exists())return;
+    const set=snap.val();
+    currentQuizSet=set;
+    currentQuizQs=set.qs;
+    currentQIdx=0;
+    quizAnswers=[];
+    quizSelected=null;
+    document.getElementById('quiz-home').style.display='none';
+    document.getElementById('quiz-result').style.display='none';
+    document.getElementById('quiz-active').style.display='block';
+    showQuestion();
+  });
+}
+
+function showQuestion(){
+  const q=currentQuizQs[currentQIdx];
+  const total=currentQuizQs.length;
+  document.getElementById('quiz-progress-label').textContent=`Question ${currentQIdx+1} of ${total}`;
+  document.getElementById('quiz-progress-bar').style.width=((currentQIdx/total)*100)+'%';
+  document.getElementById('quiz-question').textContent=q.q;
+  document.getElementById('quiz-explanation').style.display='none';
+  document.getElementById('quiz-next-btn').style.display='none';
+  quizSelected=null;
+  const opts=document.getElementById('quiz-options');
+  opts.innerHTML=q.options.map((o,i)=>`
+    <button onclick="selectOption(${i})" id="qopt-${i}" style="width:100%;text-align:left;padding:10px 14px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--text);font-family:var(--sans);font-size:13px;cursor:pointer;transition:all 0.2s;">
+      <span style="font-weight:700;margin-right:8px;">${['A','B','C','D'][i]}.</span>${escapeHTML(o)}
+    </button>`).join('');
+}
+
+function selectOption(idx){
+  if(quizSelected!==null)return; // already answered
+  quizSelected=idx;
+  const q=currentQuizQs[currentQIdx];
+  quizAnswers.push({q:q.q,options:q.options,answer:q.answer,selected:idx,explanation:q.explanation||''});
+  // Color options
+  q.options.forEach((_,i)=>{
+    const btn=document.getElementById('qopt-'+i);
+    if(!btn)return;
+    btn.style.cursor='default';
+    if(i===q.answer) btn.style.background='#052e16',btn.style.borderColor='#16a34a',btn.style.color='#86efac';
+    else if(i===idx&&idx!==q.answer) btn.style.background='#2d0a0a',btn.style.borderColor='#dc2626',btn.style.color='#fca5a5';
+  });
+  // Show explanation
+  if(q.explanation){
+    const ex=document.getElementById('quiz-explanation');
+    ex.innerHTML=`💡 <strong>Explanation:</strong> ${escapeHTML(q.explanation)}`;
+    ex.style.display='block';
+  }
+  document.getElementById('quiz-next-btn').style.display='block';
+  document.getElementById('quiz-next-btn').textContent=currentQIdx+1<currentQuizQs.length?'Next →':'See Results';
+}
+
+function nextQuestion(){
+  currentQIdx++;
+  if(currentQIdx<currentQuizQs.length){showQuestion();}
+  else{showQuizResult();}
+}
+
+function showQuizResult(){
+  document.getElementById('quiz-active').style.display='none';
+  document.getElementById('quiz-result').style.display='block';
+  document.getElementById('quiz-review-list').style.display='none';
+  const correct=quizAnswers.filter(a=>a.selected===a.answer).length;
+  const total=quizAnswers.length;
+  const pct=Math.round((correct/total)*100);
+  document.getElementById('quiz-result-score').textContent=`${correct} / ${total} correct (${pct}%)`;
+  let emoji='😔',msg='Keep studying — you can do it!';
+  if(pct>=80){emoji='🎉';msg='Excellent work! You really know this topic.';}
+  else if(pct>=60){emoji='👍';msg='Good effort! Review the ones you missed.';}
+  else if(pct>=40){emoji='📚';msg='Keep going — revise and try again.';}
+  document.getElementById('quiz-result-emoji').textContent=emoji;
+  document.getElementById('quiz-result-msg').textContent=msg;
+}
+
+function reviewQuiz(){
+  const list=document.getElementById('quiz-review-list');
+  list.style.display='block';
+  list.innerHTML=quizAnswers.map((a,i)=>{
+    const correct=a.selected===a.answer;
+    return `<div style="background:var(--card);border:1px solid ${correct?'#16a34a':'#dc2626'};border-radius:10px;padding:12px;margin-bottom:10px;">
+      <div style="font-size:12px;font-weight:700;margin-bottom:6px;">${i+1}. ${escapeHTML(a.q)}</div>
+      ${a.options.map((o,j)=>`<div style="font-size:11px;padding:3px 8px;border-radius:5px;margin-bottom:2px;${j===a.answer?'color:#86efac;':j===a.selected&&!correct?'color:#fca5a5;':'color:var(--muted);'}">
+        ${['A','B','C','D'][j]}. ${escapeHTML(o)} ${j===a.answer?'✓':j===a.selected&&!correct?'✗':''}
+      </div>`).join('')}
+      ${a.explanation?`<div style="font-size:11px;color:var(--muted);margin-top:6px;font-style:italic;">💡 ${escapeHTML(a.explanation)}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function retryQuiz(){
+  if(!currentQuizSet)return;
+  currentQIdx=0;quizAnswers=[];quizSelected=null;
+  document.getElementById('quiz-result').style.display='none';
+  document.getElementById('quiz-active').style.display='block';
+  showQuestion();
+}
+
+function exitQuiz(){
+  currentQuizSet=null;currentQuizQs=[];currentQIdx=0;quizAnswers=[];
+  showQuizHome();
 }
 
 function dismissPWA(){
