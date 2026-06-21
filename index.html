@@ -471,7 +471,12 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
   </div>
 </nav>
 
-<!-- PROFILE MODAL -->
+<!-- ANNOUNCEMENT BANNER -->
+<div id="ann-banner" style="display:none;margin:8px 12px 0;border-radius:10px;padding:10px 14px;font-size:13px;line-height:1.5;position:relative;">
+  <div style="font-weight:700;margin-bottom:2px;" id="ann-banner-title"></div>
+  <div id="ann-banner-msg" style="font-size:12px;opacity:0.9;"></div>
+  <button onclick="dismissAnnouncement()" style="position:absolute;top:8px;right:10px;background:none;border:none;font-size:16px;cursor:pointer;opacity:0.7;color:inherit;">✕</button>
+</div>
 <div class="profile-modal-overlay" id="profile-modal-overlay" onclick="if(event.target===this)closeProfile()">
   <div class="profile-modal">
     <div class="profile-avatar-big" id="profile-avatar-big">👤</div>
@@ -834,6 +839,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
         <div class="atab" onclick="switchATab('notes',this)">📝 Note</div>
         <div class="atab" onclick="switchATab('videos',this)">🎥 Video</div>
         <div class="atab" onclick="switchATab('manage',this)">🗑️ Manage</div>
+        <div class="atab" onclick="switchATab('announce',this)">📢 Announce</div>
         <div class="atab" onclick="switchATab('firebase',this)">🔥 Firebase</div>
       </div>
       <!-- STRUCTURE -->
@@ -877,6 +883,32 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
       <div class="aform" id="aform-manage">
         <div class="section-label">Notes</div><div class="manage-list" id="manage-notes"></div>
         <div class="section-label">Videos</div><div class="manage-list" id="manage-videos"></div>
+      </div>
+      <!-- ANNOUNCE -->
+      <div class="aform" id="aform-announce">
+        <div class="section-label">📢 Post Announcement</div>
+        <div class="form-group"><label>TITLE</label><input type="text" id="ann-title" placeholder="e.g. New Notes Uploaded!"></div>
+        <div class="form-group"><label>MESSAGE</label><textarea id="ann-msg" placeholder="e.g. Physiology Chapter 5 notes are now available in the app." style="height:80px;"></textarea></div>
+        <div class="form-group"><label>TYPE</label>
+          <select id="ann-type" class="lb-input">
+            <option value="info">ℹ️ Info (blue)</option>
+            <option value="success">✅ Success (green)</option>
+            <option value="warning">⚠️ Warning (yellow)</option>
+            <option value="urgent">🔴 Urgent (red)</option>
+          </select>
+        </div>
+        <div class="form-group"><label>EXPIRES AFTER</label>
+          <select id="ann-expiry" class="lb-input">
+            <option value="1">1 day</option>
+            <option value="3" selected>3 days</option>
+            <option value="7">7 days</option>
+            <option value="30">30 days</option>
+          </select>
+        </div>
+        <button class="submit-btn" onclick="postAnnouncement()">📢 Post Announcement</button>
+        <div class="success-msg" id="ann-success">✅ Announcement posted!</div>
+        <div class="section-label" style="margin-top:16px;">Active Announcements</div>
+        <div id="admin-ann-list" style="font-size:12px;color:var(--muted);">Loading...</div>
       </div>
       <!-- FIREBASE -->
       <div class="aform" id="aform-firebase">
@@ -935,8 +967,8 @@ function saveLocal(){
   localStorage.setItem('ms4_notes',JSON.stringify(notes));
   localStorage.setItem('ms4_videos',JSON.stringify(videos));
 }
-function saveSaved(){localStorage.setItem('ms4_saved',JSON.stringify(savedNotes));}
-function saveSavedVideos(){localStorage.setItem('ms4_savedvids',JSON.stringify(savedVideos));}
+function saveSaved(){localStorage.setItem('ms4_saved',JSON.stringify(savedNotes));syncToFirebase('saved',savedNotes);}
+function saveSavedVideos(){localStorage.setItem('ms4_savedvids',JSON.stringify(savedVideos));syncToFirebase('savedvids',savedVideos);}
 function isVideoSaved(id){return savedVideos.some(s=>s.id===id);}
 function toggleSaveVideo(video){
   const idx=savedVideos.findIndex(s=>s.id===video.id);
@@ -997,9 +1029,11 @@ function initFirebase(cb){
           currentUser=user;
           authReady=true;
           updateAuthUI();
+          if(user) loadUserDataFromFirebase();
         });
       }
       if(cb)cb();
+      checkAnnouncements();
     }catch(e){fbConnected=false;console.error(e);}
     updateFBStatus();updateHomeBanner();
   });
@@ -1518,12 +1552,12 @@ function filterVP(cId,el){
 
 // ═══════════════ PLANNER ═══════════════
 function todayKey(){return new Date().toISOString().slice(0,10);}
-function logHours(){const h=parseFloat(document.getElementById('log-hrs').value)||0,k=todayKey();weekLog[k]=(weekLog[k]||0)+h;localStorage.setItem('ms_weeklog',JSON.stringify(weekLog));renderPlanner();}
-function addExam(){const n=document.getElementById('exam-name').value.trim(),d=document.getElementById('exam-date').value;if(!n||!d){alert('Fill exam name and date!');return;}exams.push({name:n,date:d});localStorage.setItem('ms_exams',JSON.stringify(exams));document.getElementById('exam-name').value='';document.getElementById('exam-date').value='';renderPlanner();}
-function delExam(i){exams.splice(i,1);localStorage.setItem('ms_exams',JSON.stringify(exams));renderPlanner();}
-function addGoal(){const t=document.getElementById('goal-input').value.trim();if(!t)return;goals.push({text:t,done:false,date:todayKey()});localStorage.setItem('ms_goals',JSON.stringify(goals));document.getElementById('goal-input').value='';renderPlanner();}
-function toggleGoal(i){goals[i].done=!goals[i].done;localStorage.setItem('ms_goals',JSON.stringify(goals));renderPlanner();}
-function delGoal(i){goals.splice(i,1);localStorage.setItem('ms_goals',JSON.stringify(goals));renderPlanner();}
+function logHours(){const h=parseFloat(document.getElementById('log-hrs').value)||0,k=todayKey();weekLog[k]=(weekLog[k]||0)+h;localStorage.setItem('ms_weeklog',JSON.stringify(weekLog));syncToFirebase('weeklog',weekLog);renderPlanner();}
+function addExam(){const n=document.getElementById('exam-name').value.trim(),d=document.getElementById('exam-date').value;if(!n||!d){alert('Fill exam name and date!');return;}exams.push({name:n,date:d});localStorage.setItem('ms_exams',JSON.stringify(exams));syncToFirebase('exams',exams);document.getElementById('exam-name').value='';document.getElementById('exam-date').value='';renderPlanner();}
+function delExam(i){exams.splice(i,1);localStorage.setItem('ms_exams',JSON.stringify(exams));syncToFirebase('exams',exams);renderPlanner();}
+function addGoal(){const t=document.getElementById('goal-input').value.trim();if(!t)return;goals.push({text:t,done:false,date:todayKey()});localStorage.setItem('ms_goals',JSON.stringify(goals));syncToFirebase('goals',goals);document.getElementById('goal-input').value='';renderPlanner();}
+function toggleGoal(i){goals[i].done=!goals[i].done;localStorage.setItem('ms_goals',JSON.stringify(goals));syncToFirebase('goals',goals);renderPlanner();}
+function delGoal(i){goals.splice(i,1);localStorage.setItem('ms_goals',JSON.stringify(goals));syncToFirebase('goals',goals);renderPlanner();}
 function renderPlanner(){
   const today=todayKey(),todayHrs=weekLog[today]||0,todayGoals=goals.filter(g=>g.date===today),done=todayGoals.filter(g=>g.done).length;
   document.getElementById('ps-hours').textContent=todayHrs.toFixed(1);
@@ -1607,6 +1641,7 @@ function switchATab(tab,el){
   if(tab==='notes'){updateNoteSubjects();updateNoteFolders();}
   if(tab==='videos')updateVidSubjects();
   if(tab==='firebase')updateFBStatus();
+  if(tab==='announce')loadAdminAnnouncements();
 }
 function populateAllSelects(){
   ['struct-course-sel','note-course','vid-course','struct-fcourse'].forEach(id=>{
@@ -2182,6 +2217,7 @@ function saveProfile(){
   userProfile.name = document.getElementById('profile-name-inp').value.trim();
   userProfile.course = document.getElementById('profile-course-inp').value;
   localStorage.setItem('ms_profile', JSON.stringify(userProfile));
+  syncToFirebase('profile', userProfile);
   updateProfileUI();
   showProfileView();
   // Pre-fill leaderboard name
@@ -2196,6 +2232,59 @@ function saveProfile(){
 
 
 // ═══════════════ AUTH ═══════════════
+
+// ── Firebase user data sync ──
+function getUserRef(){
+  if(!currentUser||!db) return null;
+  return db.ref('users/'+currentUser.uid);
+}
+
+function syncToFirebase(key, value){
+  const ref = getUserRef();
+  if(!ref) return;
+  const update = {};
+  update[key] = value;
+  ref.update(update).catch(e=>console.warn('Sync failed:',e));
+}
+
+function loadUserDataFromFirebase(){
+  const ref = getUserRef();
+  if(!ref) return;
+  ref.once('value', snap=>{
+    if(!snap||!snap.exists()) return;
+    const d = snap.val();
+    // Merge Firebase data into local — Firebase wins (it's the source of truth)
+    if(d.profile){
+      userProfile = Object.assign(userProfile, d.profile);
+      localStorage.setItem('ms_profile', JSON.stringify(userProfile));
+      updateProfileUI();
+    }
+    if(d.exams){
+      exams = d.exams;
+      localStorage.setItem('ms_exams', JSON.stringify(exams));
+    }
+    if(d.goals){
+      goals = d.goals;
+      localStorage.setItem('ms_goals', JSON.stringify(goals));
+    }
+    if(d.weeklog){
+      weekLog = d.weeklog;
+      localStorage.setItem('ms_weeklog', JSON.stringify(weekLog));
+    }
+    if(d.saved){
+      savedNotes = d.saved;
+      localStorage.setItem('ms4_saved', JSON.stringify(savedNotes));
+    }
+    if(d.savedvids){
+      savedVideos = d.savedvids;
+      localStorage.setItem('ms4_savedvids', JSON.stringify(savedVideos));
+    }
+    // Refresh UI with synced data
+    if(document.getElementById('page-planner').classList.contains('active')) renderPlanner();
+    if(document.getElementById('page-saved').classList.contains('active')) renderSaved();
+  });
+}
+
 function openLoginModal(sub){
   const subEl=document.getElementById('login-modal-sub');
   if(sub&&subEl) subEl.textContent=sub;
@@ -2233,7 +2322,7 @@ function authErrMsg(code){
     'auth/email-already-in-use':'An account with this email already exists.',
     'auth/weak-password':'Password must be at least 6 characters.',
     'auth/too-many-requests':'Too many attempts. Try again later.',
-    'auth/network-request-failed':'No internet connection.',
+    'auth/network-request-failed':'Google Sign-in requires VPN in Russia. Use email/password instead.',
     'auth/popup-closed-by-user':'Sign-in popup was closed.',
     'auth/popup-blocked':'Popup was blocked. Allow popups for this site.',
   };
@@ -2247,7 +2336,10 @@ function doEmailSignIn(){
   const btn=document.getElementById('li-btn');
   btn.textContent='Signing in...';btn.disabled=true;
   auth.signInWithEmailAndPassword(email,pass)
-    .then(()=>{closeLoginModal();})
+    .then(()=>{
+      gtag('event','login',{method:'email'});
+      closeLoginModal();
+    })
     .catch(e=>{showAuthError('li-err',authErrMsg(e.code));})
     .finally(()=>{btn.textContent='Sign In →';btn.disabled=false;});
 }
@@ -2263,7 +2355,7 @@ function doEmailSignUp(){
     .then(cred=>{
       // Save display name
       return cred.user.updateProfile({displayName:name}).then(()=>{
-        // Also pre-fill local profile
+        gtag('event','sign_up',{method:'email'});
         userProfile.name=name;
         localStorage.setItem('ms_profile',JSON.stringify(userProfile));
         closeLoginModal();
@@ -2278,7 +2370,11 @@ function doGoogleSignIn(){
   const btn=document.getElementById('google-signin-btn');
   btn.textContent='Opening Google...';btn.disabled=true;
   auth.signInWithPopup(provider)
-    .then(()=>{closeLoginModal();})
+    .then((result)=>{
+      const isNew = result.additionalUserInfo && result.additionalUserInfo.isNewUser;
+      gtag('event', isNew ? 'sign_up' : 'login', {method:'google'});
+      closeLoginModal();
+    })
     .catch(e=>{showAuthError('google-err',authErrMsg(e.code));})
     .finally(()=>{
       btn.innerHTML=`<svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg> Continue with Google`;
@@ -2329,6 +2425,100 @@ function updateAuthUI(){
 function requireLogin(featureName, onSuccess){
   if(currentUser){onSuccess();return;}
   openLoginModal('Sign in to use '+featureName);
+}
+
+// ═══════════════ ANNOUNCEMENTS ═══════════════
+const ANN_COLORS = {
+  info:    {bg:'#0e2a4a',border:'#2563eb',color:'#93c5fd'},
+  success: {bg:'#052e16',border:'#16a34a',color:'#86efac'},
+  warning: {bg:'#2d1a00',border:'#d97706',color:'#fcd34d'},
+  urgent:  {bg:'#2d0a0a',border:'#dc2626',color:'#fca5a5'},
+};
+
+function postAnnouncement(){
+  if(!db){alert('Firebase not connected.');return;}
+  const title=document.getElementById('ann-title').value.trim();
+  const msg=document.getElementById('ann-msg').value.trim();
+  const type=document.getElementById('ann-type').value;
+  const days=parseInt(document.getElementById('ann-expiry').value)||3;
+  if(!title||!msg){alert('Fill in title and message.');return;}
+  const expiry=Date.now()+(days*24*60*60*1000);
+  const id='ann_'+Date.now();
+  db.ref('medistudy_announcements/'+id).set({id,title,msg,type,expiry,ts:Date.now()})
+    .then(()=>{
+      document.getElementById('ann-title').value='';
+      document.getElementById('ann-msg').value='';
+      const s=document.getElementById('ann-success');
+      s.style.display='block';setTimeout(()=>s.style.display='none',2500);
+      loadAdminAnnouncements();
+    })
+    .catch(e=>alert('Failed: '+e.message));
+}
+
+function loadAdminAnnouncements(){
+  if(!db)return;
+  const el=document.getElementById('admin-ann-list');
+  if(!el)return;
+  db.ref('medistudy_announcements').orderByChild('expiry').once('value',snap=>{
+    if(!snap||!snap.exists()){el.innerHTML='<div style="color:var(--muted);font-size:12px;">No active announcements.</div>';return;}
+    const now=Date.now();
+    let html='';
+    snap.forEach(c=>{
+      const a=c.val();
+      const expired=a.expiry<now;
+      const col=ANN_COLORS[a.type]||ANN_COLORS.info;
+      html+=`<div style="background:${col.bg};border:1px solid ${col.border};border-radius:8px;padding:10px;margin-bottom:8px;position:relative;">
+        <div style="font-weight:700;font-size:12px;color:${col.color};">${escapeHTML(a.title)} ${expired?'<span style="color:#e85d38;">[EXPIRED]</span>':''}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">${escapeHTML(a.msg)}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Expires: ${new Date(a.expiry).toLocaleDateString()}</div>
+        <button onclick="deleteAnnouncement('${a.id}')" style="position:absolute;top:8px;right:8px;background:#e85d38;border:none;border-radius:5px;color:#fff;font-size:10px;padding:2px 7px;cursor:pointer;">Delete</button>
+      </div>`;
+    });
+    el.innerHTML=html||'<div style="color:var(--muted);font-size:12px;">No announcements.</div>';
+  });
+}
+
+function deleteAnnouncement(id){
+  if(!db||!id)return;
+  db.ref('medistudy_announcements/'+id).remove().then(()=>loadAdminAnnouncements());
+}
+
+function checkAnnouncements(){
+  if(!db)return;
+  const dismissed=JSON.parse(localStorage.getItem('ms_dismissed_anns')||'[]');
+  db.ref('medistudy_announcements').orderByChild('expiry').startAt(Date.now()).limitToLast(1).once('value',snap=>{
+    if(!snap||!snap.exists())return;
+    snap.forEach(c=>{
+      const a=c.val();
+      if(dismissed.includes(a.id))return;
+      showAnnouncementBanner(a);
+    });
+  });
+}
+
+function showAnnouncementBanner(a){
+  const banner=document.getElementById('ann-banner');
+  if(!banner)return;
+  const col=ANN_COLORS[a.type]||ANN_COLORS.info;
+  banner.style.background=col.bg;
+  banner.style.border='1px solid '+col.border;
+  banner.style.color=col.color;
+  banner.dataset.id=a.id;
+  document.getElementById('ann-banner-title').textContent='📢 '+a.title;
+  document.getElementById('ann-banner-msg').textContent=a.msg;
+  banner.style.display='block';
+}
+
+function dismissAnnouncement(){
+  const banner=document.getElementById('ann-banner');
+  if(!banner)return;
+  const id=banner.dataset.id;
+  if(id){
+    const dismissed=JSON.parse(localStorage.getItem('ms_dismissed_anns')||'[]');
+    if(!dismissed.includes(id)){dismissed.push(id);}
+    localStorage.setItem('ms_dismissed_anns',JSON.stringify(dismissed));
+  }
+  banner.style.display='none';
 }
 
 function dismissPWA(){
@@ -2734,6 +2924,7 @@ function initBatchChat(){
   if(fbConnected && db){
     chatInitAttempts = 0;
     if(chatInitTimer){ clearTimeout(chatInitTimer); chatInitTimer=null; }
+    cleanOldChatMessages(); // silently remove messages older than 3 days
     if(!chatUserName){
       showChatEl('chat-name-setup');
     } else {
@@ -2787,6 +2978,20 @@ function changeChatName(){
 }
 
 let _chatRef = null; // store the exact ref used for .on() so .off() works correctly
+
+function cleanOldChatMessages(){
+  if(!db) return;
+  const cutoff = Date.now() - (3 * 24 * 60 * 60 * 1000); // 3 days ago
+  db.ref('medistudy_chat').orderByChild('ts').endAt(cutoff).once('value', snap=>{
+    if(!snap || !snap.exists()) return;
+    const updates = {};
+    snap.forEach(c=>{ updates[c.key] = null; }); // null = delete in Firebase
+    if(Object.keys(updates).length > 0){
+      db.ref('medistudy_chat').update(updates);
+    }
+  });
+}
+
 function startBatchChatListener(){
   if(!db) return;
   // Remove old listener using the SAME ref object
