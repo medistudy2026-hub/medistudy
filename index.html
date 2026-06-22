@@ -1310,7 +1310,7 @@ function addChatMsg(role,text){
 function fmt(t){return t.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\*(.*?)\*/g,'<em>$1</em>').replace(/\n/g,'<br>');}
 
 // ═══════════════ PDF VIEWER (PDF.js) ═══════════════
-let pdfJsDoc=null, pdfCurrentPage=1, pdfTotalPages=0, pdfRendering=false, pdfBlobUrl=null;
+let pdfJsDoc=null, pdfCurrentPage=1, pdfTotalPages=0, pdfRendering=false, pdfBlobUrl=null, pdfCurrentBlob=null;
 
 // Configure PDF.js worker
 if(typeof pdfjsLib!=='undefined'){
@@ -1359,6 +1359,7 @@ function _pdfShowError(msg){
 async function _renderPdfFromBlob(blob){
   // Revoke any previous blob URL
   if(pdfBlobUrl){ URL.revokeObjectURL(pdfBlobUrl); pdfBlobUrl=null; }
+  pdfCurrentBlob=blob;
   pdfBlobUrl=URL.createObjectURL(blob);
 
   if(typeof pdfjsLib==='undefined'){
@@ -1504,6 +1505,7 @@ function closePDF(){
   document.getElementById('pdf-overlay').classList.remove('open');
   // Cleanup
   if(pdfBlobUrl){ URL.revokeObjectURL(pdfBlobUrl); pdfBlobUrl=null; }
+  pdfCurrentBlob=null;
   document.getElementById('pdf-frame').src='';
   document.getElementById('pdf-frame').style.display='none';
   document.getElementById('pdf-canvas-container').innerHTML='';
@@ -1557,10 +1559,12 @@ function toggleSaveNote(note){
     };
     // If the PDF viewer already has this blob in memory (user tapped Save while viewing),
     // reuse it — no extra download needed!
-    if(currentPDF&&currentPDF.id===note.id&&pdfBlobUrl){
-      fetch(pdfBlobUrl).then(r=>r.blob()).then(blob=>{
-        savePdfBlobDirect(note.id,blob).then(ok=>{ if(ok) _updateSaveBtn(); });
-      }).catch(()=>_tryDownloadAndSave(note.id,fileId,_updateSaveBtn));
+    if(currentPDF&&currentPDF.id===note.id&&pdfCurrentBlob){
+      // PDF blob is already in memory — save directly, no re-download needed
+      savePdfBlobDirect(note.id,pdfCurrentBlob).then(ok=>{
+        if(ok) _updateSaveBtn();
+        else _tryDownloadAndSave(note.id,fileId,_updateSaveBtn);
+      });
     } else {
       _tryDownloadAndSave(note.id,fileId,_updateSaveBtn);
     }
