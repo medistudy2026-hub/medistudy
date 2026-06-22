@@ -958,8 +958,14 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
       <div class="aform" id="aform-mcq">
         <div class="section-label">🧠 MCQ Generator</div>
 
-        <!-- Step 1: Paste notes -->
-        <div id="mcq-step1">
+        <!-- Sub tabs -->
+        <div style="display:flex;gap:4px;margin-bottom:14px;background:var(--card);border-radius:10px;padding:3px;">
+          <button id="mcqtab-ai" onclick="switchMCQTab('ai')" style="flex:1;padding:7px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none;background:var(--accent);color:#0e0f13;font-family:var(--sans);">🤖 AI Generate</button>
+          <button id="mcqtab-manual" onclick="switchMCQTab('manual')" style="flex:1;padding:7px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none;background:transparent;color:var(--muted);font-family:var(--sans);">✏️ Manual</button>
+        </div>
+
+        <!-- AI Generate panel -->
+        <div id="mcq-ai-panel">
           <div class="form-group">
             <label>SUBJECT / TOPIC NAME</label>
             <input type="text" id="mcq-subject" placeholder="e.g. Cardiac Cycle — Physiology">
@@ -991,8 +997,50 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
           <button class="submit-btn" onclick="publishMCQSet()" id="mcq-pub-btn" style="margin-top:10px;">✅ Publish to Students</button>
           <div class="success-msg" id="mcq-pub-success">✅ MCQ set published!</div>
         </div>
+        </div><!-- end mcq-ai-panel -->
 
-        <!-- Existing MCQ sets -->
+        <!-- Manual Add panel -->
+        <div id="mcq-manual-panel" style="display:none;">
+          <div class="form-group">
+            <label>SUBJECT / TOPIC NAME</label>
+            <input type="text" id="mcq-manual-subject" placeholder="e.g. Cardiac Cycle — Physiology">
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Add questions one by one. They'll be saved together as one set when you publish.</div>
+
+          <!-- Add single question form -->
+          <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px;">
+            <div class="form-group">
+              <label>QUESTION</label>
+              <textarea id="mq-question" placeholder="Type your question here..." style="height:70px;"></textarea>
+            </div>
+            <div class="form-group"><label>OPTION A</label><input type="text" id="mq-opt0" placeholder="Option A"></div>
+            <div class="form-group"><label>OPTION B</label><input type="text" id="mq-opt1" placeholder="Option B"></div>
+            <div class="form-group"><label>OPTION C</label><input type="text" id="mq-opt2" placeholder="Option C"></div>
+            <div class="form-group"><label>OPTION D</label><input type="text" id="mq-opt3" placeholder="Option D"></div>
+            <div class="form-group">
+              <label>CORRECT ANSWER</label>
+              <select id="mq-answer" class="lb-input">
+                <option value="0">A</option>
+                <option value="1">B</option>
+                <option value="2">C</option>
+                <option value="3">D</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>EXPLANATION <span style="color:var(--muted);font-weight:400;">(optional)</span></label>
+              <input type="text" id="mq-explanation" placeholder="Why is this the correct answer?">
+            </div>
+            <button class="submit-btn" onclick="addManualQuestion()" style="margin-top:4px;">➕ Add Question</button>
+          </div>
+
+          <!-- Questions added so far -->
+          <div id="mq-added-list"></div>
+          <div id="mq-count-label" style="font-size:12px;color:var(--muted);margin-bottom:8px;display:none;"></div>
+          <button class="submit-btn" onclick="publishManualMCQ()" id="mq-pub-btn" style="display:none;">✅ Publish Set to Students</button>
+          <div class="success-msg" id="mq-pub-success">✅ MCQ set published!</div>
+        </div>
+
+        <!-- Published MCQ Sets — shown for both tabs -->
         <div class="section-label" style="margin-top:16px;">Published MCQ Sets</div>
         <div id="admin-mcq-list" style="font-size:12px;color:var(--muted);">Loading...</div>
       </div>
@@ -2613,49 +2661,149 @@ function dismissAnnouncement(){
 // ═══════════════ MCQ SYSTEM ═══════════════
 let currentQuizSet=null, currentQuizQs=[], currentQIdx=0, quizAnswers=[], quizSelected=null;
 
-// ── Admin: Generate MCQs from notes ──
+// ── MCQ sub-tab switcher ──
+function switchMCQTab(tab){
+  const isAI=tab==='ai';
+  document.getElementById('mcq-ai-panel').style.display=isAI?'block':'none';
+  document.getElementById('mcq-manual-panel').style.display=isAI?'none':'block';
+  document.getElementById('mcqtab-ai').style.background=isAI?'var(--accent)':'transparent';
+  document.getElementById('mcqtab-ai').style.color=isAI?'#0e0f13':'var(--muted)';
+  document.getElementById('mcqtab-manual').style.background=isAI?'transparent':'var(--accent)';
+  document.getElementById('mcqtab-manual').style.color=isAI?'var(--muted)':'#0e0f13';
+  if(!isAI) renderManualQList();
+}
+
+// ── Manual MCQ ──
+let _manualQs=[];
+
+function addManualQuestion(){
+  const q=document.getElementById('mq-question').value.trim();
+  const opts=[0,1,2,3].map(i=>document.getElementById('mq-opt'+i).value.trim());
+  const answer=parseInt(document.getElementById('mq-answer').value);
+  const explanation=document.getElementById('mq-explanation').value.trim();
+  if(!q){alert('Please enter a question.');return;}
+  if(opts.some(o=>!o)){alert('Please fill in all 4 options.');return;}
+  _manualQs.push({q,options:opts,answer,explanation});
+  // Clear form
+  document.getElementById('mq-question').value='';
+  [0,1,2,3].forEach(i=>document.getElementById('mq-opt'+i).value='');
+  document.getElementById('mq-explanation').value='';
+  document.getElementById('mq-answer').value='0';
+  renderManualQList();
+}
+
+function renderManualQList(){
+  const list=document.getElementById('mq-added-list');
+  const countLabel=document.getElementById('mq-count-label');
+  const pubBtn=document.getElementById('mq-pub-btn');
+  if(!list)return;
+  if(_manualQs.length===0){
+    list.innerHTML='';
+    countLabel.style.display='none';
+    pubBtn.style.display='none';
+    return;
+  }
+  countLabel.textContent=_manualQs.length+' question'+ (_manualQs.length>1?'s':'') +' added so far';
+  countLabel.style.display='block';
+  pubBtn.style.display='block';
+  list.innerHTML=_manualQs.map((q,i)=>`
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;">
+      <div style="font-size:12px;font-weight:700;margin-bottom:6px;">Q${i+1}. ${escapeHTML(q.q)}</div>
+      ${q.options.map((o,j)=>`
+        <div style="font-size:11px;padding:3px 8px;border-radius:5px;margin-bottom:2px;${j===q.answer?'color:#86efac;font-weight:700;':'color:var(--muted);'}">
+          ${['A','B','C','D'][j]}. ${escapeHTML(o)} ${j===q.answer?'✓':''}
+        </div>`).join('')}
+      ${q.explanation?`<div style="font-size:11px;color:var(--muted);margin-top:4px;font-style:italic;">💡 ${escapeHTML(q.explanation)}</div>`:''}
+      <button onclick="deleteManualQ(${i})" style="margin-top:6px;font-size:10px;background:none;border:1px solid #e85d38;border-radius:5px;padding:2px 8px;color:#e85d38;cursor:pointer;">🗑 Remove</button>
+    </div>`).join('');
+}
+
+function deleteManualQ(i){
+  _manualQs.splice(i,1);
+  renderManualQList();
+}
+
+function publishManualMCQ(){
+  if(!db){alert('Firebase not connected.');return;}
+  const subject=document.getElementById('mcq-manual-subject').value.trim();
+  if(!subject){alert('Please enter a subject/topic name.');return;}
+  if(_manualQs.length===0){alert('Add at least one question first.');return;}
+  const btn=document.getElementById('mq-pub-btn');
+  btn.disabled=true;btn.textContent='Publishing...';
+  const id='mcq_'+Date.now();
+  db.ref('medistudy_mcq/'+id).set({id,subject,qs:_manualQs,ts:Date.now(),count:_manualQs.length})
+    .then(()=>{
+      const s=document.getElementById('mq-pub-success');
+      s.style.display='block';setTimeout(()=>s.style.display='none',2500);
+      _manualQs=[];
+      document.getElementById('mcq-manual-subject').value='';
+      renderManualQList();
+      loadAdminMCQSets();
+    })
+    .catch(e=>alert('Failed: '+e.message))
+    .finally(()=>{btn.disabled=false;btn.textContent='✅ Publish Set to Students';});
+}
 async function generateMCQ(){
   const subject=document.getElementById('mcq-subject').value.trim();
   const notes=document.getElementById('mcq-notes').value.trim();
-  const count=document.getElementById('mcq-count').value;
+  const count=parseInt(document.getElementById('mcq-count').value)||5;
   if(!subject||!notes){alert('Please fill in subject and notes.');return;}
   const btn=document.getElementById('mcq-gen-btn');
   const status=document.getElementById('mcq-gen-status');
   btn.disabled=true;btn.textContent='⏳ Generating...';
   status.style.display='block';
-  const prompt=`You are an MBBS medical education expert. Based on the following study notes, generate exactly ${count} high-quality MCQ questions.
 
-SUBJECT: ${subject}
-
-NOTES:
-${notes}
-
-Return ONLY a valid JSON array with no extra text, no markdown, no backticks. Each object must have:
-- "q": question text
-- "options": array of exactly 4 strings (A, B, C, D options without the letter prefix)
-- "answer": index of correct option (0=A, 1=B, 2=C, 3=D)
-- "explanation": brief explanation of why the answer is correct (1-2 sentences)
-
-Example format:
-[{"q":"What is...?","options":["Option1","Option2","Option3","Option4"],"answer":0,"explanation":"Because..."}]`;
+  // Generate in batches of 5 to avoid token limits
+  const batchSize=5;
+  const batches=Math.ceil(count/batchSize);
+  let allQs=[];
 
   try{
-    const res=await fetch(WORKER_URL,{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({message:prompt, systemPrompt:'You are a medical MCQ generator. Return only valid JSON arrays. No markdown, no backticks, no extra text.'})
-    });
-    const data=await res.json();
-    let text='';
-    if(data.choices&&data.choices[0]) text=data.choices[0].message.content;
-    else if(data.reply) text=data.reply;
-    // Clean and parse JSON
-    text=text.replace(/```json|```/g,'').trim();
-    const qs=JSON.parse(text);
-    if(!Array.isArray(qs)||qs.length===0)throw new Error('Invalid response');
-    showMCQReview(subject, qs);
+    for(let b=0;b<batches;b++){
+      const bCount=Math.min(batchSize, count-allQs.length);
+      const prompt=`Generate exactly ${bCount} MBBS MCQ questions from these notes on "${subject}".
+Return ONLY a JSON array. No markdown, no backticks, no explanation outside JSON.
+Each item: {"q":"question","options":["A","B","C","D"],"answer":0,"explanation":"reason"}
+answer is 0-3 index of correct option.
+
+NOTES: ${notes.substring(0,2000)}`;
+
+      const res=await fetch(WORKER_URL,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          message:prompt,
+          systemPrompt:'You are a medical MCQ generator. Return ONLY a valid JSON array. No markdown. No text before or after the array.'
+        })
+      });
+      const data=await res.json();
+      let text='';
+      if(data.choices&&data.choices[0]) text=data.choices[0].message.content;
+      else if(data.reply) text=data.reply;
+
+      // Clean response
+      text=text.replace(/```json|```/g,'').trim();
+      // Fix truncated JSON — find last complete object
+      const lastBrace=text.lastIndexOf('}');
+      if(lastBrace!==-1) text=text.substring(0,lastBrace+1);
+      // Ensure it's wrapped in array
+      if(!text.startsWith('[')) text='['+text;
+      if(!text.endsWith(']')) text=text+']';
+
+      try{
+        const qs=JSON.parse(text);
+        if(Array.isArray(qs)) allQs=allQs.concat(qs);
+      }catch(e){
+        console.warn('Batch parse failed:',e);
+      }
+
+      if(allQs.length>=count) break;
+    }
+
+    if(allQs.length===0) throw new Error('Could not generate questions. Try shorter notes.');
+    showMCQReview(subject, allQs.slice(0,count));
   }catch(e){
-    alert('Generation failed: '+e.message+'\nTry with shorter notes or fewer questions.');
+    alert('Generation failed: '+e.message+'\nTip: Use shorter notes (1-2 paragraphs) and try 5 questions first.');
   }finally{
     btn.disabled=false;btn.textContent='🤖 Generate MCQs';
     status.style.display='none';
