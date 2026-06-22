@@ -1420,6 +1420,27 @@ function _updateNavBar(){
   document.getElementById('pdf-next-btn').disabled=pdfCurrentPage>=pdfTotalPages;
 }
 
+// Download a PDF from Google Drive with retry (handles virus-scan warning page)
+async function _driveDownloadWithConfirm(fileId){
+  const url=`https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`;
+  async function _tryFetch(){
+    const resp=await fetch(url,{mode:'cors'});
+    if(!resp.ok) return null;
+    const blob=await resp.blob();
+    // Reject HTML pages (Drive virus-scan warning) and tiny blobs
+    if(blob.type.includes('text/html')||blob.size<5000) return null;
+    return blob;
+  }
+  let blob=await _tryFetch();
+  if(!blob){
+    // Drive sometimes returns the warning on first hit — wait and retry once
+    console.warn('[MediStudy] Drive returned HTML on first fetch, retrying in 1.5s...');
+    await new Promise(r=>setTimeout(r,1500));
+    blob=await _tryFetch();
+  }
+  return blob; // null if both failed
+}
+
 async function openPDF(note){
   currentPDF=note;
   document.getElementById('pdf-title').textContent=note.topic;
@@ -1454,28 +1475,16 @@ async function openPDF(note){
   _pdfSetProgress(20);
 
   if(fileId){
-    // Try direct download via Drive export (best for PDF.js)
-    const downloadUrl=`https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`;
+    // Try direct download via Drive export (best for PDF.js + offline caching)
     try{
-      const resp=await fetch(downloadUrl,{mode:'cors'});
-      if(resp.ok){
-        const blob=await resp.blob();
-        // Accept PDF type OR any binary blob >5KB (Drive sometimes sends octet-stream)
-        // Reject small blobs that are likely HTML virus-scan warning pages
-        const looksLikePdf=blob.type.includes('pdf')||
-          (blob.size>5000&&!blob.type.includes('text/html'));
-        if(looksLikePdf){
-          // Great — render with PDF.js and also cache it automatically
-          _pdfShowLoading('Rendering PDF...');
-          await _renderPdfFromBlob(blob);
-          // Cache in background for future offline/data-saving use
-          savePdfBlobDirect(note.id, blob).then(()=>updatePDFSaveBtn(note.id));
-          return;
-        }
-        // If we got an HTML page (virus scan warning for large files), skip to iframe
-        console.warn('PDF download returned HTML (likely virus-scan page), size:',blob.size,'type:',blob.type);
+      const blob = await _driveDownloadWithConfirm(fileId);
+      if(blob){
+        _pdfShowLoading('Rendering PDF...');
+        await _renderPdfFromBlob(blob);
+        savePdfBlobDirect(note.id, blob).then(()=>updatePDFSaveBtn(note.id));
+        return;
       }
-    }catch(e){ console.warn('Direct PDF download failed, falling back to iframe',e); }
+    }catch(e){ console.warn('Drive download failed, falling back to iframe',e); }
   }
 
   // ── STEP 4: Last resort — Drive preview iframe ──
@@ -1521,7 +1530,18 @@ function updatePDFSaveBtn(id){
     btn.className='pdf-save-bar-btn';
   }
 }
-function toggleSaveFromViewer(){if(!currentPDF)return;toggleSaveNote(currentPDF);updatePDFSaveBtn(currentPDF.id);}
+function toggleSaveFromViewer(){
+  if(!currentPDF)return;
+  const btn=document.getElementById('pdf-save-bar-btn');
+  if(btn&&!isNoteSaved(currentPDF.id)){
+    btn.textContent='⏳ Saving...';
+    btn.disabled=true;
+  }
+  toggleSaveNote(currentPDF);
+  updatePDFSaveBtn(currentPDF.id);
+  // Re-enable button after max wait time (retry takes up to ~3s)
+  setTimeout(()=>{ if(btn) btn.disabled=false; }, 4000);
+}
 function toggleSaveNote(note){
   const idx=savedNotes.findIndex(s=>s.id===note.id);
   if(idx>=0){
@@ -1559,11 +1579,10 @@ function _tryDownloadAndSave(noteId,fileId,onDone){
     else {
       // Large file (>25MB) — Drive returns virus-scan warning, can't cache directly
       // The PDF is still saved in savedNotes list; just the blob couldn't be fetched
-      showOfflineToast('⚠️ File too large to save offline (>25MB limit)',false);
-      // Update save button to reflect the note is saved but blob not available
+      showOfflineToast('⚠️ Offline save failed — try opening the PDF first, then save',false);
       const btn=document.getElementById('pdf-save-bar-btn');
       if(btn&&btn.className.includes('saved')){
-        btn.textContent='⚠️ Too large for offline';
+        btn.textContent='⚠️ Save failed — retry';
         btn.className='pdf-save-bar-btn saved-bar';
       }
     }
@@ -3156,16 +3175,21 @@ function openPdfDB(){
   });
 }
 async function savePdfBlob(noteId, url){
-  try {
-    // Fetch the PDF from Drive and store as blob
-    const resp = await fetch(url, {mode:'cors'});
-    if(!resp.ok) return false;
+  async function _fetchPdfBlob(fetchUrl){
+    const resp = await fetch(fetchUrl, {mode:'cors'});
+    if(!resp.ok) return null;
     const blob = await resp.blob();
-    // Reject HTML pages (virus-scan warning for large files — can't cache those)
-    if(blob.type.includes('text/html') || blob.size < 5000){
-      console.warn('[MediStudy] savePdfBlob: HTML/tiny response (large file virus-scan?), size:',blob.size);
-      return false;
+    if(blob.type.includes('text/html') || blob.size < 5000) return null;
+    return blob;
+  }
+  try {
+    let blob = await _fetchPdfBlob(url);
+    if(!blob){
+      console.warn('[MediStudy] savePdfBlob: got HTML on first try, retrying in 1.5s...');
+      await new Promise(r=>setTimeout(r,1500));
+      blob = await _fetchPdfBlob(url);
     }
+    if(!blob){ console.warn('[MediStudy] savePdfBlob: both attempts failed.'); return false; }
     const db = await openPdfDB();
     return new Promise(res => {
       const tx = db.transaction(PDF_STORE,'readwrite');
