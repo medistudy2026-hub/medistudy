@@ -1460,7 +1460,11 @@ async function openPDF(note){
       const resp=await fetch(downloadUrl,{mode:'cors'});
       if(resp.ok){
         const blob=await resp.blob();
-        if(blob.type.includes('pdf')||blob.size>1000){
+        // Accept PDF type OR any binary blob >5KB (Drive sometimes sends octet-stream)
+        // Reject small blobs that are likely HTML virus-scan warning pages
+        const looksLikePdf=blob.type.includes('pdf')||
+          (blob.size>5000&&!blob.type.includes('text/html'));
+        if(looksLikePdf){
           // Great — render with PDF.js and also cache it automatically
           _pdfShowLoading('Rendering PDF...');
           await _renderPdfFromBlob(blob);
@@ -1468,6 +1472,8 @@ async function openPDF(note){
           savePdfBlobDirect(note.id, blob).then(()=>updatePDFSaveBtn(note.id));
           return;
         }
+        // If we got an HTML page (virus scan warning for large files), skip to iframe
+        console.warn('PDF download returned HTML (likely virus-scan page), size:',blob.size,'type:',blob.type);
       }
     }catch(e){ console.warn('Direct PDF download failed, falling back to iframe',e); }
   }
@@ -1543,9 +1549,25 @@ function toggleSaveNote(note){
   if(document.getElementById('page-saved').classList.contains('active'))renderSaved();
 }
 function _tryDownloadAndSave(noteId,fileId,onDone){
-  if(!fileId) return;
+  if(!fileId){
+    showOfflineToast('⚠️ Cannot save — no Drive file ID found',false);
+    return;
+  }
   const url=`https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`;
-  savePdfBlob(noteId,url).then(ok=>{ if(ok&&onDone) onDone(); });
+  savePdfBlob(noteId,url).then(ok=>{
+    if(ok){ if(onDone) onDone(); }
+    else {
+      // Large file (>25MB) — Drive returns virus-scan warning, can't cache directly
+      // The PDF is still saved in savedNotes list; just the blob couldn't be fetched
+      showOfflineToast('⚠️ File too large to save offline (>25MB limit)',false);
+      // Update save button to reflect the note is saved but blob not available
+      const btn=document.getElementById('pdf-save-bar-btn');
+      if(btn&&btn.className.includes('saved')){
+        btn.textContent='⚠️ Too large for offline';
+        btn.className='pdf-save-bar-btn saved-bar';
+      }
+    }
+  });
 }
 function isNoteSaved(id){return savedNotes.some(s=>s.id===id);}
 
@@ -1650,13 +1672,26 @@ function renderNotesList(c){
     inner=nts.length?`<div class="notes-list">${nts.map(n=>{
       const saved=isNoteSaved(n.id);
       const safe=JSON.stringify(n).replace(/"/g,'&quot;');
-      return`<div class="note-card"><div class="note-icon">📄</div>
+      return`<div class="note-card" id="nc-${n.id}"><div class="note-icon">📄</div>
         <div class="note-info"><div class="note-title">${n.topic}</div><div class="note-meta">${n.desc||'Study Notes'}${saved?' · 💾':''}</div></div>
         <div class="note-actions">
           <button class="note-btn" onclick='openPDF(${safe})'>Open 📂</button>
-          <button class="note-btn ${saved?'saved':''}" onclick='toggleSaveNote(${safe});renderMaterial()'>${saved?'✅':'💾'}</button>
+          <button class="note-btn ${saved?'saved':''}" id="savebtn-${n.id}" onclick='toggleSaveNote(${safe});renderMaterial()'>${saved?'✅':'💾'}</button>
         </div></div>`;
     }).join('')}</div>`:'<div class="empty-state">📭 No notes here yet.<br>Add via Admin → Note!</div>';
+    // After render: async update ✅/📥 status for saved notes
+    const savedNtIds=nts.filter(n=>isNoteSaved(n.id)).map(n=>n.id);
+    if(savedNtIds.length){
+      setTimeout(async()=>{
+        for(const id of savedNtIds){
+          const hasBlob=await hasPdfBlob(id);
+          const btn=document.getElementById('savebtn-'+id);
+          if(btn) btn.textContent=hasBlob?'✅':'📥';
+          const card=document.getElementById('nc-'+id);
+          if(card&&hasBlob) card.style.borderLeft='3px solid var(--green)';
+        }
+      },0);
+    }
   }
   c.innerHTML=`<div class="breadcrumb">
     <span class="bc-link" onclick="smView={level:'courses'};renderMaterial()">📚 Material</span><span class="bc-sep">›</span>
@@ -3122,10 +3157,15 @@ function openPdfDB(){
 }
 async function savePdfBlob(noteId, url){
   try {
-    // Fetch the PDF via Drive preview and store as blob
+    // Fetch the PDF from Drive and store as blob
     const resp = await fetch(url, {mode:'cors'});
     if(!resp.ok) return false;
     const blob = await resp.blob();
+    // Reject HTML pages (virus-scan warning for large files — can't cache those)
+    if(blob.type.includes('text/html') || blob.size < 5000){
+      console.warn('[MediStudy] savePdfBlob: HTML/tiny response (large file virus-scan?), size:',blob.size);
+      return false;
+    }
     const db = await openPdfDB();
     return new Promise(res => {
       const tx = db.transaction(PDF_STORE,'readwrite');
@@ -3133,7 +3173,7 @@ async function savePdfBlob(noteId, url){
       tx.oncomplete = () => res(true);
       tx.onerror = () => res(false);
     });
-  } catch(e){ return false; }
+  } catch(e){ console.warn('[MediStudy] savePdfBlob error:',e); return false; }
 }
 // Save a blob object directly (no fetch needed — already have the data)
 async function savePdfBlobDirect(noteId, blob){
