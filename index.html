@@ -1533,64 +1533,73 @@ function updatePDFSaveBtn(id){
   }
 }
 function toggleSaveFromViewer(){
-  if(!currentPDF)return;
+  if(!currentPDF) return;
+  const note=currentPDF;
   const btn=document.getElementById('pdf-save-bar-btn');
-  if(btn&&!isNoteSaved(currentPDF.id)){
-    btn.textContent='⏳ Saving...';
-    btn.disabled=true;
+  const alreadySaved=isNoteSaved(note.id);
+
+  if(alreadySaved){
+    // UN-SAVE: remove from list and delete blob
+    const idx=savedNotes.findIndex(s=>s.id===note.id);
+    if(idx>=0) savedNotes.splice(idx,1);
+    deletePdfBlob(note.id);
+    saveSaved();
+    if(btn){ btn.textContent='💾 Save Offline'; btn.className='pdf-save-bar-btn'; btn.disabled=false; }
+    if(document.getElementById('page-saved').classList.contains('active')) renderSaved();
+    return;
   }
-  toggleSaveNote(currentPDF);
-  updatePDFSaveBtn(currentPDF.id);
-  // Re-enable button after max wait time (retry takes up to ~3s)
-  setTimeout(()=>{ if(btn) btn.disabled=false; }, 4000);
+
+  // SAVE: add to list and cache the blob
+  savedNotes.push({...note, savedAt:Date.now()});
+  saveSaved();
+  if(document.getElementById('page-saved').classList.contains('active')) renderSaved();
+
+  if(btn){ btn.textContent='⏳ Saving...'; btn.className='pdf-save-bar-btn saved-bar'; btn.disabled=true; }
+
+  const _onSaveOk=()=>{
+    if(btn){ btn.textContent='✅ Saved Offline'; btn.className='pdf-save-bar-btn saved-bar'; btn.disabled=false; }
+  };
+  const _onSaveFail=()=>{
+    showOfflineToast('⚠️ Could not cache offline — note saved to list but not offline',false);
+    if(btn){ btn.textContent='⚠️ Not cached'; btn.className='pdf-save-bar-btn saved-bar'; btn.disabled=false; }
+  };
+
+  const m=note.link?note.link.match(/\/d\/([a-zA-Z0-9_-]+)/):null;
+  const fileId=m?m[1]:null;
+
+  if(pdfCurrentBlob){
+    // Blob already in memory from PDF.js render — save directly, instant, no download
+    savePdfBlobDirect(note.id, pdfCurrentBlob).then(ok=>{
+      if(ok) _onSaveOk();
+      else if(fileId) _tryDownloadAndCacheBlob(note.id, fileId, _onSaveOk, _onSaveFail);
+      else _onSaveFail();
+    });
+  } else if(fileId){
+    _tryDownloadAndCacheBlob(note.id, fileId, _onSaveOk, _onSaveFail);
+  } else {
+    _onSaveFail();
+  }
 }
+
 function toggleSaveNote(note){
+  // Used from notes list (not from PDF viewer). Simpler — just toggle saved state.
   const idx=savedNotes.findIndex(s=>s.id===note.id);
   if(idx>=0){
     savedNotes.splice(idx,1);
     deletePdfBlob(note.id);
   } else {
     savedNotes.push({...note, savedAt:Date.now()});
-    const m=note.link.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    // Try to cache blob in background (no UI feedback here — user is in notes list)
+    const m=note.link?note.link.match(/\/d\/([a-zA-Z0-9_-]+)/):null;
     const fileId=m?m[1]:null;
-    const _updateSaveBtn=()=>{
-      const btn=document.getElementById('pdf-save-bar-btn');
-      if(btn&&btn.className.includes('saved')) btn.textContent='✅ Saved Offline';
-    };
-    // If the PDF viewer already has this blob in memory (user tapped Save while viewing),
-    // reuse it — no extra download needed!
-    if(currentPDF&&currentPDF.id===note.id&&pdfCurrentBlob){
-      // PDF blob is already in memory — save directly, no re-download needed
-      savePdfBlobDirect(note.id,pdfCurrentBlob).then(ok=>{
-        if(ok) _updateSaveBtn();
-        else _tryDownloadAndSave(note.id,fileId,_updateSaveBtn);
-      });
-    } else {
-      _tryDownloadAndSave(note.id,fileId,_updateSaveBtn);
-    }
+    if(fileId) _tryDownloadAndCacheBlob(note.id, fileId, ()=>{}, ()=>{});
   }
   saveSaved();
-  if(document.getElementById('page-saved').classList.contains('active'))renderSaved();
+  if(document.getElementById('page-saved').classList.contains('active')) renderSaved();
 }
-function _tryDownloadAndSave(noteId,fileId,onDone){
-  if(!fileId){
-    showOfflineToast('⚠️ Cannot save — no Drive file ID found',false);
-    return;
-  }
+function _tryDownloadAndCacheBlob(noteId, fileId, onOk, onFail){
   const url=`https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`;
-  savePdfBlob(noteId,url).then(ok=>{
-    if(ok){ if(onDone) onDone(); }
-    else {
-      // Large file (>25MB) — Drive returns virus-scan warning, can't cache directly
-      // The PDF is still saved in savedNotes list; just the blob couldn't be fetched
-      showOfflineToast('⚠️ Offline save failed — try opening the PDF first, then save',false);
-      const btn=document.getElementById('pdf-save-bar-btn');
-      if(btn&&btn.className.includes('saved')){
-        btn.textContent='⚠️ Save failed — retry';
-        btn.className='pdf-save-bar-btn saved-bar';
-      }
-    }
-  });
+  savePdfBlob(noteId, url).then(ok=>{ if(ok) onOk(); else onFail(); });
 }
 function isNoteSaved(id){return savedNotes.some(s=>s.id===id);}
 
