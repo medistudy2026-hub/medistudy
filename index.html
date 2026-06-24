@@ -1569,6 +1569,7 @@ function toggleSaveFromViewer(){
 
   if(pdfCurrentBlob){
     // Blob already in memory from PDF.js render — save directly, instant, no download
+    _pdfDebugToast('Blob in memory: '+Math.round(pdfCurrentBlob.size/1024)+'KB type:'+pdfCurrentBlob.type);
     savePdfBlobDirect(note.id, pdfCurrentBlob).then(ok=>{
       if(ok) _onSaveOk();
       else if(fileId) _tryDownloadAndCacheBlob(note.id, fileId, _onSaveOk, _onSaveFail);
@@ -3182,13 +3183,32 @@ let pdfDB = null;
 // Primary: Cache API (works on Android Chrome, GitHub Pages, PWA)
 async function _saveBlobToCache(noteId, blob){
   try{
+    if(!('caches' in window)) throw new Error('Cache API not available in this browser');
     const cache = await caches.open(PDF_CACHE_NAME);
     const url = `/__pdf__/${noteId}`;
     const resp = new Response(blob, {headers:{'Content-Type': blob.type||'application/pdf'}});
     await cache.put(url, resp);
-    console.log('[MediStudy] Saved to Cache API:', noteId, blob.size, 'bytes');
+    console.log('[MediStudy] Cache API save OK:', noteId, blob.size, 'bytes');
     return true;
-  }catch(e){ console.warn('[MediStudy] Cache API save failed:',e); return false; }
+  }catch(e){
+    const msg = e && e.message ? e.message : String(e);
+    console.warn('[MediStudy] Cache API save FAILED:', msg);
+    // Show error visually so we can debug without DevTools
+    _pdfDebugToast('CacheAPI fail: ' + msg.slice(0,80));
+    return false;
+  }
+}
+function _pdfDebugToast(msg){
+  let el = document.getElementById('pdf-debug-toast');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'pdf-debug-toast';
+    el.style.cssText = 'position:fixed;bottom:80px;left:8px;right:8px;background:#1a1a2e;color:#ff9;border:1px solid #ff9;border-radius:8px;padding:10px;font-size:12px;z-index:9999;word-break:break-all;';
+    document.body.appendChild(el);
+  }
+  el.textContent = '🔍 DEBUG: ' + msg;
+  el.style.display = 'block';
+  setTimeout(()=>{ if(el) el.style.display='none'; }, 10000);
 }
 async function _getBlobFromCache(noteId){
   try{
@@ -3254,15 +3274,15 @@ async function savePdfBlobDirect(noteId, blob){
   if(cacheOk) return true;
   // Fallback: IndexedDB
   try{
-    console.warn('[PDF] Cache API failed, trying IndexedDB...');
+    _pdfDebugToast('Trying IndexedDB fallback...');
     const db = await openPdfDB();
     return new Promise(res=>{
       const tx=db.transaction(PDF_STORE,'readwrite');
       tx.objectStore(PDF_STORE).put({id:noteId, blob, savedAt:Date.now()});
-      tx.oncomplete=()=>{ console.log('[PDF] IndexedDB save OK'); res(true); };
-      tx.onerror=(e)=>{ console.warn('[PDF] IndexedDB error:',e.target.error); res(false); };
+      tx.oncomplete=()=>{ _pdfDebugToast('IndexedDB save OK!'); res(true); };
+      tx.onerror=(e)=>{ _pdfDebugToast('IDB error: '+(e.target.error||'unknown')); res(false); };
     });
-  }catch(e){ console.warn('[PDF] savePdfBlobDirect failed:',e); return false; }
+  }catch(e){ _pdfDebugToast('IDB exception: '+(e.message||String(e))); return false; }
 }
 async function getPdfBlob(noteId){
   // Try Cache API first
