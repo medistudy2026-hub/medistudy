@@ -168,7 +168,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 .pdf-no-embed{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;}
 .pdf-no-embed p{font-size:13px;color:var(--muted);line-height:1.7;}
 /* PDF.js canvas viewer */
-#pdf-canvas-container{flex:1;overflow-y:auto;overflow-x:hidden;background:#525659;display:none;-webkit-overflow-scrolling:touch;}
+#pdf-canvas-container{flex:1;overflow-y:auto;overflow-x:auto;background:#525659;display:none;-webkit-overflow-scrolling:touch;}
 #pdf-canvas-container canvas{display:block;margin:8px auto;box-shadow:0 2px 8px rgba(0,0,0,.5);max-width:100%;}
 .pdf-progress-bar{height:3px;background:var(--green);width:0%;transition:width .3s;position:absolute;top:0;left:0;right:0;}
 .pdf-nav-bar{background:var(--surface);border-top:1px solid var(--border);padding:8px 14px;display:none;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0;}
@@ -1410,7 +1410,9 @@ async function _renderAllPages(){
 
   const dpr = window.devicePixelRatio || 1;
   _pdfQualityScale = Math.max(dpr, 2.0);
-  _pdfVw = Math.min(window.innerWidth - 8, 800);
+  // Use container's actual inner width — avoids scrollbar/padding offset issues
+  const _container = document.getElementById('pdf-canvas-container');
+  _pdfVw = Math.min((_container ? _container.clientWidth : window.innerWidth) - 4, 800);
 
   // STEP 1: Get dimensions from page 1 only (fast — most PDFs are uniform size)
   // We use this to create same-height placeholders for all pages instantly
