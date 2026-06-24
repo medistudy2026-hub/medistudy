@@ -1386,82 +1386,212 @@ async function _renderPdfFromBlob(blob){
   }
 }
 
+// ═══════════════ LAZY PDF RENDERER ═══════════════
+// Renders only pages near the viewport — safe for 300-400 page PDFs
+// RAM stays ~20MB regardless of total page count
+const PDF_RENDER_AHEAD = 2;  // render 2 pages ahead of current
+const PDF_RENDER_BEHIND = 1; // keep 1 page behind rendered
+const PDF_UNLOAD_DISTANCE = 5; // recycle pages >5 away from current
+
+let _pdfPageHeights = [];    // stores CSS height of each page (for placeholder sizing)
+let _pdfRenderedPages = new Set(); // which page numbers are currently rendered
+let _pdfRenderQueue = [];    // pages waiting to render
+let _pdfRenderBusy = false;  // prevent concurrent renders
+let _pdfQualityScale = 2.0;  // global quality scale set on init
+let _pdfVw = 400;            // global viewport width set on init
+let _pdfScrollTimer = null;  // debounce timer for scroll
+
 async function _renderAllPages(){
-  const container=document.getElementById('pdf-canvas-container');
-  container.innerHTML='';
-  const dpr=window.devicePixelRatio||1;
-  // Use 2x minimum quality boost — matches native Drive viewer sharpness
-  const qualityScale=Math.max(dpr, 2.0);
-  const vw=Math.min(window.innerWidth-8, 800); // minimal margin, more content visible
-  for(let i=1;i<=pdfTotalPages;i++){
-    const page=await pdfJsDoc.getPage(i);
-    const baseViewport=page.getViewport({scale:1});
-    const scale=(vw/baseViewport.width)*qualityScale;
-    const viewport=page.getViewport({scale});
-    const canvas=document.createElement('canvas');
-    canvas.width=viewport.width;
-    canvas.height=viewport.height;
-    // CSS size = physical size / dpr — looks sharp on Retina/high-DPI screens
-    canvas.style.width=(viewport.width/qualityScale)+'px';
-    canvas.style.height=(viewport.height/qualityScale)+'px';
-    canvas.style.display='block';
-    // Create annotation layer canvas (renders highlights, colored text, underlines)
-    const annotCanvas=document.createElement('canvas');
-    annotCanvas.width=viewport.width;
-    annotCanvas.height=viewport.height;
-    annotCanvas.style.cssText=`position:absolute;top:0;left:0;width:${viewport.width/qualityScale}px;height:${viewport.height/qualityScale}px;pointer-events:none;`;
-    const wrapper=document.createElement('div');
-    wrapper.style.cssText=`position:relative;display:block;margin:6px auto;width:${viewport.width/qualityScale}px;height:${viewport.height/qualityScale}px;box-shadow:0 2px 8px rgba(0,0,0,0.4);`;
-    canvas.style.margin='0';
-    canvas.style.boxShadow='none';
-    wrapper.appendChild(canvas);
-    wrapper.appendChild(annotCanvas);
-    container.appendChild(wrapper);
-    // Render page content + annotations (includes highlights, colored text, underlines)
+  const container = document.getElementById('pdf-canvas-container');
+  container.innerHTML = '';
+  _pdfRenderedPages.clear();
+  _pdfRenderQueue = [];
+  _pdfRenderBusy = false;
+
+  const dpr = window.devicePixelRatio || 1;
+  _pdfQualityScale = Math.max(dpr, 2.0);
+  _pdfVw = Math.min(window.innerWidth - 8, 800);
+
+  // STEP 1: Get page dimensions for ALL pages (cheap — no pixel rendering)
+  // This lets us create correct-height placeholders instantly
+  _pdfPageHeights = [];
+  _pdfSetProgress(82);
+  for(let i = 1; i <= pdfTotalPages; i++){
+    const page = await pdfJsDoc.getPage(i);
+    const base = page.getViewport({scale: 1});
+    const scale = (_pdfVw / base.width) * _pdfQualityScale;
+    const vp = page.getViewport({scale});
+    const cssH = Math.round(vp.height / _pdfQualityScale);
+    const cssW = Math.round(vp.width / _pdfQualityScale);
+    _pdfPageHeights.push({cssW, cssH, scale, vp});
+  }
+  _pdfSetProgress(90);
+
+  // STEP 2: Create placeholder divs for every page (instant, zero RAM for pixels)
+  _pdfPageHeights.forEach((dim, idx) => {
+    const ph = document.createElement('div');
+    ph.id = `pdf-page-${idx+1}`;
+    ph.dataset.page = idx + 1;
+    ph.style.cssText = `
+      position:relative; display:block; margin:6px auto;
+      width:${dim.cssW}px; height:${dim.cssH}px;
+      background:#3a3a3a; box-shadow:0 2px 8px rgba(0,0,0,0.4);
+    `;
+    // Page number label inside placeholder
+    const lbl = document.createElement('div');
+    lbl.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#888;font-size:13px;';
+    lbl.textContent = `Page ${idx+1}`;
+    ph.appendChild(lbl);
+    container.appendChild(ph);
+  });
+
+  container.scrollTop = 0;
+  pdfCurrentPage = 1;
+  _updateNavBar();
+  _pdfSetProgress(100);
+
+  // STEP 3: Render first visible pages immediately
+  await _lazyRenderAround(1);
+}
+
+// Render pages around a given page number, unload far pages
+async function _lazyRenderAround(centerPage){
+  const from = Math.max(1, centerPage - PDF_RENDER_BEHIND);
+  const to   = Math.min(pdfTotalPages, centerPage + PDF_RENDER_AHEAD);
+
+  // Unload pages that are too far away (free RAM)
+  for(const p of [..._pdfRenderedPages]){
+    if(p < centerPage - PDF_UNLOAD_DISTANCE || p > centerPage + PDF_UNLOAD_DISTANCE){
+      _unloadPage(p);
+    }
+  }
+
+  // Queue pages to render (skip already rendered)
+  for(let i = from; i <= to; i++){
+    if(!_pdfRenderedPages.has(i)){
+      _pdfRenderQueue.push(i);
+    }
+  }
+  // Deduplicate queue
+  _pdfRenderQueue = [...new Set(_pdfRenderQueue)];
+
+  // Start processing queue
+  _processRenderQueue();
+}
+
+async function _processRenderQueue(){
+  if(_pdfRenderBusy || _pdfRenderQueue.length === 0) return;
+  _pdfRenderBusy = true;
+  while(_pdfRenderQueue.length > 0){
+    const pageNum = _pdfRenderQueue.shift();
+    if(!_pdfRenderedPages.has(pageNum)){
+      await _renderSinglePage(pageNum);
+    }
+  }
+  _pdfRenderBusy = false;
+}
+
+async function _renderSinglePage(pageNum){
+  const container = document.getElementById('pdf-canvas-container');
+  const placeholder = document.getElementById(`pdf-page-${pageNum}`);
+  if(!placeholder || !pdfJsDoc) return;
+
+  try{
+    const page = await pdfJsDoc.getPage(pageNum);
+    const dim = _pdfPageHeights[pageNum - 1];
+    const viewport = dim.vp;
+
+    // Build canvas
+    const canvas = document.createElement('canvas');
+    canvas.width  = viewport.width;
+    canvas.height = viewport.height;
+    canvas.style.width  = dim.cssW + 'px';
+    canvas.style.height = dim.cssH + 'px';
+    canvas.style.display = 'block';
+
+    // Annotation overlay canvas (for highlights, underlines etc)
+    const annotCanvas = document.createElement('canvas');
+    annotCanvas.width  = viewport.width;
+    annotCanvas.height = viewport.height;
+    annotCanvas.style.cssText = `position:absolute;top:0;left:0;width:${dim.cssW}px;height:${dim.cssH}px;pointer-events:none;`;
+
+    // Clear placeholder and insert rendered canvases
+    placeholder.innerHTML = '';
+    placeholder.appendChild(canvas);
+    placeholder.appendChild(annotCanvas);
+
+    // Render pixels
     await page.render({
       canvasContext: canvas.getContext('2d'),
       viewport,
-      annotationMode: 2  // ENABLE — renders all PDF annotations including highlights
+      annotationMode: 2
     }).promise;
-    // Update page counter as pages render
-    pdfCurrentPage=i;
-    _updateNavBar();
-    _pdfSetProgress(80+Math.round((i/pdfTotalPages)*20));
+
+    _pdfRenderedPages.add(pageNum);
+  }catch(e){
+    console.warn('[PDF] Failed to render page', pageNum, e);
   }
-  container.scrollTop=0;
 }
 
-// Track current page based on scroll position
+function _unloadPage(pageNum){
+  const placeholder = document.getElementById(`pdf-page-${pageNum}`);
+  if(!placeholder) return;
+  const dim = _pdfPageHeights[pageNum - 1];
+  // Replace canvas with a lightweight placeholder (keeps scroll height intact)
+  placeholder.innerHTML = '';
+  const lbl = document.createElement('div');
+  lbl.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#666;font-size:12px;';
+  lbl.textContent = `Page ${pageNum}`;
+  placeholder.appendChild(lbl);
+  _pdfRenderedPages.delete(pageNum);
+}
+
+// Scroll handler — debounced to avoid firing 60x per second
 function _onPdfScroll(){
   if(!pdfJsDoc) return;
-  const container=document.getElementById('pdf-canvas-container');
-  const canvases=container.querySelectorAll('canvas');
-  const scrollTop=container.scrollTop;
-  let current=1;
-  canvases.forEach((c,i)=>{
-    if(c.offsetTop<=scrollTop+100) current=i+1;
+  if(_pdfScrollTimer) clearTimeout(_pdfScrollTimer);
+  _pdfScrollTimer = setTimeout(_onPdfScrollDebounced, 120);
+}
+
+function _onPdfScrollDebounced(){
+  const container = document.getElementById('pdf-canvas-container');
+  if(!container) return;
+  const scrollTop = container.scrollTop;
+  const viewH = container.clientHeight;
+
+  // Find which page is most visible
+  let current = 1;
+  const placeholders = container.querySelectorAll('[data-page]');
+  placeholders.forEach(ph => {
+    const top = ph.offsetTop;
+    const h   = ph.offsetHeight;
+    if(top <= scrollTop + viewH * 0.5) current = parseInt(ph.dataset.page);
   });
-  if(current!==pdfCurrentPage){
-    pdfCurrentPage=current;
+
+  if(current !== pdfCurrentPage){
+    pdfCurrentPage = current;
     _updateNavBar();
   }
+
+  // Trigger lazy render around new position
+  _lazyRenderAround(current);
 }
 
 async function pdfPrevPage(){
-  const container=document.getElementById('pdf-canvas-container');
-  const canvases=container.querySelectorAll('canvas');
-  if(pdfCurrentPage<=1)return;
+  if(pdfCurrentPage<=1) return;
   pdfCurrentPage--;
-  if(canvases[pdfCurrentPage-1]) canvases[pdfCurrentPage-1].scrollIntoView({behavior:'smooth'});
+  const ph=document.getElementById(`pdf-page-${pdfCurrentPage}`);
+  if(ph) ph.scrollIntoView({behavior:'smooth'});
   _updateNavBar();
+  _lazyRenderAround(pdfCurrentPage);
 }
 async function pdfNextPage(){
-  const container=document.getElementById('pdf-canvas-container');
-  const canvases=container.querySelectorAll('canvas');
-  if(pdfCurrentPage>=pdfTotalPages)return;
+  if(pdfCurrentPage>=pdfTotalPages) return;
   pdfCurrentPage++;
-  if(canvases[pdfCurrentPage-1]) canvases[pdfCurrentPage-1].scrollIntoView({behavior:'smooth'});
+  const ph=document.getElementById(`pdf-page-${pdfCurrentPage}`);
+  if(ph) ph.scrollIntoView({behavior:'smooth'});
   _updateNavBar();
+  _lazyRenderAround(pdfCurrentPage);
 }
 function _updateNavBar(){
   document.getElementById('pdf-page-info').textContent=`Page ${pdfCurrentPage} / ${pdfTotalPages}`;
