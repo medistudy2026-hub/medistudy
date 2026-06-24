@@ -1390,23 +1390,39 @@ async function _renderAllPages(){
   const container=document.getElementById('pdf-canvas-container');
   container.innerHTML='';
   const dpr=window.devicePixelRatio||1;
-  const vw=Math.min(window.innerWidth-16, 800); // 8px margin each side
+  // Use 2x minimum quality boost — matches native Drive viewer sharpness
+  const qualityScale=Math.max(dpr, 2.0);
+  const vw=Math.min(window.innerWidth-8, 800); // minimal margin, more content visible
   for(let i=1;i<=pdfTotalPages;i++){
     const page=await pdfJsDoc.getPage(i);
     const baseViewport=page.getViewport({scale:1});
-    const scale=(vw/baseViewport.width)*dpr; // High-DPI quality fix
+    const scale=(vw/baseViewport.width)*qualityScale;
     const viewport=page.getViewport({scale});
     const canvas=document.createElement('canvas');
     canvas.width=viewport.width;
     canvas.height=viewport.height;
     // CSS size = physical size / dpr — looks sharp on Retina/high-DPI screens
-    canvas.style.width=(viewport.width/dpr)+'px';
-    canvas.style.height=(viewport.height/dpr)+'px';
+    canvas.style.width=(viewport.width/qualityScale)+'px';
+    canvas.style.height=(viewport.height/qualityScale)+'px';
     canvas.style.display='block';
-    canvas.style.margin='6px auto';
-    canvas.style.boxShadow='0 2px 8px rgba(0,0,0,0.4)';
-    container.appendChild(canvas);
-    await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+    // Create annotation layer canvas (renders highlights, colored text, underlines)
+    const annotCanvas=document.createElement('canvas');
+    annotCanvas.width=viewport.width;
+    annotCanvas.height=viewport.height;
+    annotCanvas.style.cssText=`position:absolute;top:0;left:0;width:${viewport.width/qualityScale}px;height:${viewport.height/qualityScale}px;pointer-events:none;`;
+    const wrapper=document.createElement('div');
+    wrapper.style.cssText=`position:relative;display:block;margin:6px auto;width:${viewport.width/qualityScale}px;height:${viewport.height/qualityScale}px;box-shadow:0 2px 8px rgba(0,0,0,0.4);`;
+    canvas.style.margin='0';
+    canvas.style.boxShadow='none';
+    wrapper.appendChild(canvas);
+    wrapper.appendChild(annotCanvas);
+    container.appendChild(wrapper);
+    // Render page content + annotations (includes highlights, colored text, underlines)
+    await page.render({
+      canvasContext: canvas.getContext('2d'),
+      viewport,
+      annotationMode: 2  // ENABLE — renders all PDF annotations including highlights
+    }).promise;
     // Update page counter as pages render
     pdfCurrentPage=i;
     _updateNavBar();
