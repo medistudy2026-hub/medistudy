@@ -1412,18 +1412,19 @@ async function _renderAllPages(){
   _pdfQualityScale = Math.max(dpr, 2.0);
   _pdfVw = Math.min(window.innerWidth - 8, 800);
 
-  // STEP 1: Get page dimensions for ALL pages (cheap — no pixel rendering)
-  // This lets us create correct-height placeholders instantly
+  // STEP 1: Get dimensions from page 1 only (fast — most PDFs are uniform size)
+  // We use this to create same-height placeholders for all pages instantly
   _pdfPageHeights = [];
-  _pdfSetProgress(82);
+  _pdfSetProgress(85);
+  const firstPage = await pdfJsDoc.getPage(1);
+  const firstBase = firstPage.getViewport({scale: 1});
+  const firstScale = (_pdfVw / firstBase.width) * _pdfQualityScale;
+  const firstVp = firstPage.getViewport({scale: firstScale});
+  const defaultCssW = Math.round(firstVp.width / _pdfQualityScale);
+  const defaultCssH = Math.round(firstVp.height / _pdfQualityScale);
+  // Store default dim for all pages — actual dims fetched when page renders
   for(let i = 1; i <= pdfTotalPages; i++){
-    const page = await pdfJsDoc.getPage(i);
-    const base = page.getViewport({scale: 1});
-    const scale = (_pdfVw / base.width) * _pdfQualityScale;
-    const vp = page.getViewport({scale});
-    const cssH = Math.round(vp.height / _pdfQualityScale);
-    const cssW = Math.round(vp.width / _pdfQualityScale);
-    _pdfPageHeights.push({cssW, cssH, scale, vp});
+    _pdfPageHeights.push({cssW: defaultCssW, cssH: defaultCssH});
   }
   _pdfSetProgress(90);
 
@@ -1498,29 +1499,30 @@ async function _renderSinglePage(pageNum){
 
   try{
     const page = await pdfJsDoc.getPage(pageNum);
-    const dim = _pdfPageHeights[pageNum - 1];
-    const viewport = dim.vp;
+    // Compute this page's actual dimensions (handles PDFs with mixed page sizes)
+    const base = page.getViewport({scale: 1});
+    const scale = (_pdfVw / base.width) * _pdfQualityScale;
+    const viewport = page.getViewport({scale});
+    const cssW = Math.round(viewport.width / _pdfQualityScale);
+    const cssH = Math.round(viewport.height / _pdfQualityScale);
+    // Update stored dimensions so placeholder height is exact after render
+    _pdfPageHeights[pageNum-1] = {cssW, cssH};
+    // Update placeholder height in case it differs from default
+    if(placeholder) { placeholder.style.width=cssW+'px'; placeholder.style.height=cssH+'px'; }
 
     // Build canvas
     const canvas = document.createElement('canvas');
     canvas.width  = viewport.width;
     canvas.height = viewport.height;
-    canvas.style.width  = dim.cssW + 'px';
-    canvas.style.height = dim.cssH + 'px';
+    canvas.style.width  = cssW + 'px';
+    canvas.style.height = cssH + 'px';
     canvas.style.display = 'block';
 
-    // Annotation overlay canvas (for highlights, underlines etc)
-    const annotCanvas = document.createElement('canvas');
-    annotCanvas.width  = viewport.width;
-    annotCanvas.height = viewport.height;
-    annotCanvas.style.cssText = `position:absolute;top:0;left:0;width:${dim.cssW}px;height:${dim.cssH}px;pointer-events:none;`;
-
-    // Clear placeholder and insert rendered canvases
+    // Clear placeholder and insert rendered canvas
     placeholder.innerHTML = '';
     placeholder.appendChild(canvas);
-    placeholder.appendChild(annotCanvas);
 
-    // Render pixels
+    // Render pixels (annotationMode 2 = render highlights/underlines into same canvas)
     await page.render({
       canvasContext: canvas.getContext('2d'),
       viewport,
@@ -1558,22 +1560,25 @@ function _onPdfScrollDebounced(){
   if(!container) return;
   const scrollTop = container.scrollTop;
   const viewH = container.clientHeight;
+  const containerTop = container.getBoundingClientRect().top;
 
-  // Find which page is most visible
+  // Find which page is at the top of the visible area
+  // Use getBoundingClientRect so positions are relative to viewport, not document
   let current = 1;
   const placeholders = container.querySelectorAll('[data-page]');
   placeholders.forEach(ph => {
-    const top = ph.offsetTop;
-    const h   = ph.offsetHeight;
-    if(top <= scrollTop + viewH * 0.5) current = parseInt(ph.dataset.page);
+    const rect = ph.getBoundingClientRect();
+    // Page is considered "current" when its top edge enters the top half of container
+    if(rect.top <= containerTop + viewH * 0.5) current = parseInt(ph.dataset.page);
   });
+
+  // Clamp to valid range
+  current = Math.max(1, Math.min(current, pdfTotalPages));
 
   if(current !== pdfCurrentPage){
     pdfCurrentPage = current;
     _updateNavBar();
   }
-
-  // Trigger lazy render around new position
   _lazyRenderAround(current);
 }
 
