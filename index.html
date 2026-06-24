@@ -1330,7 +1330,9 @@ function _pdfShowLoading(msg){
 }
 function _pdfShowCanvas(){
   document.getElementById('pdf-loading').style.display='none';
-  document.getElementById('pdf-canvas-container').style.display='block';
+  const c=document.getElementById('pdf-canvas-container');
+  c.style.display='block';
+  c.onscroll=_onPdfScroll;
   document.getElementById('pdf-frame').style.display='none';
   document.getElementById('pdf-no-embed').style.display='none';
   document.getElementById('pdf-nav-bar').classList.add('visible');
@@ -1357,13 +1359,11 @@ function _pdfShowError(msg){
 }
 
 async function _renderPdfFromBlob(blob){
-  // Revoke any previous blob URL
   if(pdfBlobUrl){ URL.revokeObjectURL(pdfBlobUrl); pdfBlobUrl=null; }
   pdfCurrentBlob=blob;
   pdfBlobUrl=URL.createObjectURL(blob);
 
   if(typeof pdfjsLib==='undefined'){
-    // PDF.js not loaded yet — fallback to iframe with blob
     _pdfShowFallbackIframe(pdfBlobUrl);
     return;
   }
@@ -1376,47 +1376,79 @@ async function _renderPdfFromBlob(blob){
     pdfTotalPages=pdfJsDoc.numPages;
     pdfCurrentPage=1;
     _pdfSetProgress(80);
-    await _renderPage(pdfCurrentPage);
     _pdfShowCanvas();
     _updateNavBar();
+    // Render all pages in a scrollable column — natural scroll like a document
+    await _renderAllPages();
   }catch(e){
     console.warn('PDF.js render failed:',e);
-    // Fallback: show blob in iframe
     _pdfShowFallbackIframe(pdfBlobUrl);
   }
 }
 
-async function _renderPage(num){
-  if(!pdfJsDoc||pdfRendering) return;
-  pdfRendering=true;
+async function _renderAllPages(){
   const container=document.getElementById('pdf-canvas-container');
   container.innerHTML='';
-  const page=await pdfJsDoc.getPage(num);
-  const vw=Math.min(window.innerWidth, 800);
-  const viewport=page.getViewport({scale: vw/page.getViewport({scale:1}).width});
-  const canvas=document.createElement('canvas');
-  canvas.width=viewport.width;
-  canvas.height=viewport.height;
-  container.appendChild(canvas);
-  await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+  const dpr=window.devicePixelRatio||1;
+  const vw=Math.min(window.innerWidth-16, 800); // 8px margin each side
+  for(let i=1;i<=pdfTotalPages;i++){
+    const page=await pdfJsDoc.getPage(i);
+    const baseViewport=page.getViewport({scale:1});
+    const scale=(vw/baseViewport.width)*dpr; // High-DPI quality fix
+    const viewport=page.getViewport({scale});
+    const canvas=document.createElement('canvas');
+    canvas.width=viewport.width;
+    canvas.height=viewport.height;
+    // CSS size = physical size / dpr — looks sharp on Retina/high-DPI screens
+    canvas.style.width=(viewport.width/dpr)+'px';
+    canvas.style.height=(viewport.height/dpr)+'px';
+    canvas.style.display='block';
+    canvas.style.margin='6px auto';
+    canvas.style.boxShadow='0 2px 8px rgba(0,0,0,0.4)';
+    container.appendChild(canvas);
+    await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+    // Update page counter as pages render
+    pdfCurrentPage=i;
+    _updateNavBar();
+    _pdfSetProgress(80+Math.round((i/pdfTotalPages)*20));
+  }
   container.scrollTop=0;
-  pdfRendering=false;
+}
+
+// Track current page based on scroll position
+function _onPdfScroll(){
+  if(!pdfJsDoc) return;
+  const container=document.getElementById('pdf-canvas-container');
+  const canvases=container.querySelectorAll('canvas');
+  const scrollTop=container.scrollTop;
+  let current=1;
+  canvases.forEach((c,i)=>{
+    if(c.offsetTop<=scrollTop+100) current=i+1;
+  });
+  if(current!==pdfCurrentPage){
+    pdfCurrentPage=current;
+    _updateNavBar();
+  }
 }
 
 async function pdfPrevPage(){
+  const container=document.getElementById('pdf-canvas-container');
+  const canvases=container.querySelectorAll('canvas');
   if(pdfCurrentPage<=1)return;
   pdfCurrentPage--;
-  await _renderPage(pdfCurrentPage);
+  if(canvases[pdfCurrentPage-1]) canvases[pdfCurrentPage-1].scrollIntoView({behavior:'smooth'});
   _updateNavBar();
 }
 async function pdfNextPage(){
+  const container=document.getElementById('pdf-canvas-container');
+  const canvases=container.querySelectorAll('canvas');
   if(pdfCurrentPage>=pdfTotalPages)return;
   pdfCurrentPage++;
-  await _renderPage(pdfCurrentPage);
+  if(canvases[pdfCurrentPage-1]) canvases[pdfCurrentPage-1].scrollIntoView({behavior:'smooth'});
   _updateNavBar();
 }
 function _updateNavBar(){
-  document.getElementById('pdf-page-info').textContent=`Page ${pdfCurrentPage} of ${pdfTotalPages}`;
+  document.getElementById('pdf-page-info').textContent=`Page ${pdfCurrentPage} / ${pdfTotalPages}`;
   document.getElementById('pdf-prev-btn').disabled=pdfCurrentPage<=1;
   document.getElementById('pdf-next-btn').disabled=pdfCurrentPage>=pdfTotalPages;
 }
