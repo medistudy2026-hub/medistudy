@@ -1423,23 +1423,23 @@ function _updateNavBar(){
 
 // Download a PDF from Google Drive with retry (handles virus-scan warning page)
 async function _driveDownloadWithConfirm(fileId){
-  const url=`https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`;
-  async function _tryFetch(){
-    const resp=await fetch(url,{mode:'cors'});
-    if(!resp.ok) return null;
+  // Route through Cloudflare Worker to bypass Google Drive CORS block
+  const workerUrl=`https://calm-lake-2eaf.medistudy2026.workers.dev/pdf?id=${fileId}`;
+  _pdfDebugToast('Fetching via Worker: '+fileId.slice(0,12)+'...');
+  try{
+    const resp=await fetch(workerUrl);
+    if(!resp.ok){ _pdfDebugToast('Worker error: HTTP '+resp.status); return null; }
     const blob=await resp.blob();
-    // Reject HTML pages (Drive virus-scan warning) and tiny blobs
-    if(blob.type.includes('text/html')||blob.size<5000) return null;
+    if(blob.type.includes('text/html')||blob.size<5000){
+      _pdfDebugToast('Worker returned HTML/tiny: '+blob.size+'b type:'+blob.type);
+      return null;
+    }
+    _pdfDebugToast('Worker fetch OK: '+Math.round(blob.size/1024)+'KB');
     return blob;
+  }catch(e){
+    _pdfDebugToast('Worker fetch exception: '+(e.message||String(e)).slice(0,60));
+    return null;
   }
-  let blob=await _tryFetch();
-  if(!blob){
-    // Drive sometimes returns the warning on first hit — wait and retry once
-    console.warn('[MediStudy] Drive returned HTML on first fetch, retrying in 1.5s...');
-    await new Promise(r=>setTimeout(r,1500));
-    blob=await _tryFetch();
-  }
-  return blob; // null if both failed
 }
 
 async function openPDF(note){
