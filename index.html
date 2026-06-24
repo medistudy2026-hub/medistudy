@@ -3173,18 +3173,53 @@ window.sendMsg = async function() {
   return originalSendMsg();
 };
 
-// ═══════════════ PDF BLOB STORAGE (IndexedDB) ═══════════════
-// Saves actual PDF content so it works offline
+// ═══════════════ PDF BLOB STORAGE (Cache API + IndexedDB fallback) ═══════════════
+// Cache API is more reliable on Android Chrome than IndexedDB for large blobs
+const PDF_CACHE_NAME = 'MediStudyPDFs-v1';
 const PDF_DB_NAME = 'MediStudyPDFs', PDF_DB_VER = 1, PDF_STORE = 'pdfs';
 let pdfDB = null;
 
+// Primary: Cache API (works on Android Chrome, GitHub Pages, PWA)
+async function _saveBlobToCache(noteId, blob){
+  try{
+    const cache = await caches.open(PDF_CACHE_NAME);
+    const url = `/__pdf__/${noteId}`;
+    const resp = new Response(blob, {headers:{'Content-Type': blob.type||'application/pdf'}});
+    await cache.put(url, resp);
+    console.log('[MediStudy] Saved to Cache API:', noteId, blob.size, 'bytes');
+    return true;
+  }catch(e){ console.warn('[MediStudy] Cache API save failed:',e); return false; }
+}
+async function _getBlobFromCache(noteId){
+  try{
+    const cache = await caches.open(PDF_CACHE_NAME);
+    const resp = await cache.match(`/__pdf__/${noteId}`);
+    if(!resp) return null;
+    return await resp.blob();
+  }catch(e){ return null; }
+}
+async function _deleteBlobFromCache(noteId){
+  try{
+    const cache = await caches.open(PDF_CACHE_NAME);
+    await cache.delete(`/__pdf__/${noteId}`);
+  }catch(e){}
+}
+async function _hasBlobInCache(noteId){
+  try{
+    const cache = await caches.open(PDF_CACHE_NAME);
+    const resp = await cache.match(`/__pdf__/${noteId}`);
+    return !!resp;
+  }catch(e){ return false; }
+}
+
+// Fallback: IndexedDB
 function openPdfDB(){
   return new Promise((res, rej) => {
     if(pdfDB){res(pdfDB);return;}
     const req = indexedDB.open(PDF_DB_NAME, PDF_DB_VER);
     req.onupgradeneeded = e => e.target.result.createObjectStore(PDF_STORE, {keyPath:'id'});
     req.onsuccess = e => { pdfDB = e.target.result; res(pdfDB); };
-    req.onerror = () => rej('IndexedDB failed');
+    req.onerror = (e) => rej('IndexedDB failed: ' + e.target.error);
   });
 }
 async function savePdfBlob(noteId, url){
@@ -3212,19 +3247,28 @@ async function savePdfBlob(noteId, url){
     });
   } catch(e){ console.warn('[MediStudy] savePdfBlob error:',e); return false; }
 }
-// Save a blob object directly (no fetch needed — already have the data)
+// ── Blob storage: Cache API (primary) + IndexedDB (fallback) ──
 async function savePdfBlobDirect(noteId, blob){
+  // Try Cache API first — most reliable on Android Chrome + GitHub Pages
+  const cacheOk = await _saveBlobToCache(noteId, blob);
+  if(cacheOk) return true;
+  // Fallback: IndexedDB
   try{
-    const db=await openPdfDB();
+    console.warn('[PDF] Cache API failed, trying IndexedDB...');
+    const db = await openPdfDB();
     return new Promise(res=>{
       const tx=db.transaction(PDF_STORE,'readwrite');
       tx.objectStore(PDF_STORE).put({id:noteId, blob, savedAt:Date.now()});
-      tx.oncomplete=()=>res(true);
-      tx.onerror=()=>res(false);
+      tx.oncomplete=()=>{ console.log('[PDF] IndexedDB save OK'); res(true); };
+      tx.onerror=(e)=>{ console.warn('[PDF] IndexedDB error:',e.target.error); res(false); };
     });
-  }catch(e){return false;}
+  }catch(e){ console.warn('[PDF] savePdfBlobDirect failed:',e); return false; }
 }
 async function getPdfBlob(noteId){
+  // Try Cache API first
+  const b = await _getBlobFromCache(noteId);
+  if(b) return b;
+  // Fallback: IndexedDB
   try {
     const db = await openPdfDB();
     return new Promise(res => {
@@ -3235,6 +3279,7 @@ async function getPdfBlob(noteId){
   } catch(e){ return null; }
 }
 async function deletePdfBlob(noteId){
+  await _deleteBlobFromCache(noteId);
   try {
     const db = await openPdfDB();
     const tx = db.transaction(PDF_STORE,'readwrite');
@@ -3242,6 +3287,7 @@ async function deletePdfBlob(noteId){
   } catch(e){}
 }
 async function hasPdfBlob(noteId){
+  if(await _hasBlobInCache(noteId)) return true;
   const blob = await getPdfBlob(noteId);
   return blob !== null;
 }
