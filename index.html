@@ -1409,7 +1409,9 @@ async function _renderAllPages(){
   _pdfRenderBusy = false;
 
   const dpr = window.devicePixelRatio || 1;
-  _pdfQualityScale = Math.max(dpr, 2.0);
+  // Adaptive quality: budget phones (low-DPI screens) get 2x — still sharp on their screen
+  // Mid/flagship phones (high-DPI screens) get 3x — Drive-level quality
+  _pdfQualityScale = dpr <= 1.5 ? Math.max(dpr, 2.0) : Math.max(dpr, 3.0);
   // Use container's actual inner width — avoids scrollbar/padding offset issues
   const _container = document.getElementById('pdf-canvas-container');
   _pdfVw = Math.min((_container ? _container.clientWidth : window.innerWidth) - 4, 800);
