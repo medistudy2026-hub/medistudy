@@ -966,9 +966,15 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 
         <!-- AI Generate panel -->
         <div id="mcq-ai-panel">
+          <div id="mcq-step1">
           <div class="form-group">
             <label>SUBJECT / TOPIC NAME</label>
             <input type="text" id="mcq-subject" placeholder="e.g. Cardiac Cycle — Physiology">
+          </div>
+          <div class="form-group">
+            <label>LINK TO SUBJECT <span style="color:var(--muted);font-weight:400;">(where to show in Study Material)</span></label>
+            <select id="mcq-course-sel" class="lb-input" style="margin-bottom:6px;" onchange="updateMCQSubjects('mcq-subject-sel','mcq-course-sel')"><option value="">— Select Course —</option></select>
+            <select id="mcq-subject-sel" class="lb-input"><option value="">— Select Subject —</option></select>
           </div>
           <div class="form-group">
             <label>PASTE YOUR NOTES HERE</label>
@@ -985,7 +991,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
           </div>
           <button class="submit-btn" onclick="generateMCQ()" id="mcq-gen-btn">🤖 Generate MCQs</button>
           <div id="mcq-gen-status" style="font-size:12px;color:var(--muted);margin-top:8px;display:none;">⏳ AI is generating questions...</div>
-        </div>
+          </div><!-- end mcq-step1 -->
 
         <!-- Step 2: Review generated MCQs -->
         <div id="mcq-step2" style="display:none;">
@@ -1004,6 +1010,11 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
           <div class="form-group">
             <label>SUBJECT / TOPIC NAME</label>
             <input type="text" id="mcq-manual-subject" placeholder="e.g. Cardiac Cycle — Physiology">
+          </div>
+          <div class="form-group">
+            <label>LINK TO SUBJECT <span style="color:var(--muted);font-weight:400;">(where to show in Study Material)</span></label>
+            <select id="mcq-manual-course-sel" class="lb-input" style="margin-bottom:6px;" onchange="updateMCQSubjects('mcq-manual-subject-sel','mcq-manual-course-sel')"><option value="">— Select Course —</option></select>
+            <select id="mcq-manual-subject-sel" class="lb-input"><option value="">— Select Subject —</option></select>
           </div>
           <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Add questions one by one. They'll be saved together as one set when you publish.</div>
 
@@ -1905,18 +1916,22 @@ function renderFoldersList(c, activeTab){
 
   c.innerHTML=breadcrumb+tabs+contentHtml;
 
-  // Load MCQs from Firebase if on MCQ tab
+  // Load MCQs from Firebase if on MCQ tab — filtered by subjectId
   if(activeTab==='mcqs'){
+    const filterSubjectId=smView.subjectId;
     if(!db){
       document.getElementById('sm-mcq-list').innerHTML='<div class="empty-state">📡 Requires internet connection.</div>';
     } else {
       db.ref('medistudy_mcq').orderByChild('ts').once('value',snap=>{
         const el=document.getElementById('sm-mcq-list');
         if(!el)return;
-        if(!snap||!snap.exists()){el.innerHTML='<div class="empty-state">📭 No MCQ sets published yet.</div>';return;}
+        if(!snap||!snap.exists()){el.innerHTML='<div class="empty-state">📭 No MCQs for this subject yet.</div>';return;}
         let html='';
         snap.forEach(c2=>{
           const m=c2.val();
+          // Only show MCQs linked to this subject
+          if(m.subjectId && m.subjectId!==filterSubjectId) return;
+          // Also hide MCQs that are linked to a DIFFERENT subject (old MCQs with no subjectId show everywhere)
           html=`<div class="note-card" style="cursor:pointer;" onclick="goPage('quiz');setTimeout(()=>startQuiz('${m.id}'),300)">
             <div class="note-icon" style="background:#1a0e2a;">🧠</div>
             <div class="note-info">
@@ -1926,7 +1941,7 @@ function renderFoldersList(c, activeTab){
             <div class="note-actions"><button class="note-btn" style="background:var(--purple);color:#fff;border-color:var(--purple);">Start →</button></div>
           </div>`+html;
         });
-        el.innerHTML=html||'<div class="empty-state">📭 No MCQ sets yet.</div>';
+        el.innerHTML=html||'<div class="empty-state">📭 No MCQs for this subject yet.</div>';
       });
     }
   }
@@ -2091,7 +2106,7 @@ function switchATab(tab,el){
   if(tab==='videos')updateVidSubjects();
   if(tab==='firebase')updateFBStatus();
   if(tab==='announce')loadAdminAnnouncements();
-  if(tab==='mcq')loadAdminMCQSets();
+  if(tab==='mcq'){loadAdminMCQSets();populateMCQSubjectDropdowns();}
 }
 function populateAllSelects(){
   ['struct-course-sel','note-course','vid-course','struct-fcourse'].forEach(id=>{
@@ -3036,15 +3051,38 @@ function deleteManualQ(i){
   renderManualQList();
 }
 
+function populateMCQSubjectDropdowns(){
+  // Populate both AI and Manual course dropdowns
+  ['mcq-course-sel','mcq-manual-course-sel'].forEach(selId=>{
+    const sel=document.getElementById(selId);
+    if(!sel)return;
+    sel.innerHTML='<option value="">— Select Course —</option>'+courses.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+    // Auto-select first course and populate subjects
+    const paired=selId==='mcq-course-sel'?'mcq-subject-sel':'mcq-manual-subject-sel';
+    if(courses.length){sel.value=courses[0].id;updateMCQSubjects(paired,selId);}
+  });
+}
+
+function updateMCQSubjects(subSelId, courseSelId){
+  const courseId=document.getElementById(courseSelId).value;
+  const sel=document.getElementById(subSelId);
+  if(!sel)return;
+  const subs=subjects.filter(s=>s.courseId===courseId);
+  sel.innerHTML='<option value="">— Select Subject —</option>'+subs.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+}
+
 function publishManualMCQ(){
   if(!db){alert('Firebase not connected.');return;}
   const subject=document.getElementById('mcq-manual-subject').value.trim();
   if(!subject){alert('Please enter a subject/topic name.');return;}
   if(_manualQs.length===0){alert('Add at least one question first.');return;}
+  const subjectId=document.getElementById('mcq-manual-subject-sel').value;
+  const courseId=document.getElementById('mcq-manual-course-sel').value;
+  if(!subjectId){alert('Please select which subject to link this MCQ to!');return;}
   const btn=document.getElementById('mq-pub-btn');
   btn.disabled=true;btn.textContent='Publishing...';
   const id='mcq_'+Date.now();
-  db.ref('medistudy_mcq/'+id).set({id,subject,qs:_manualQs,ts:Date.now(),count:_manualQs.length})
+  db.ref('medistudy_mcq/'+id).set({id,subject,subjectId,courseId,qs:_manualQs,ts:Date.now(),count:_manualQs.length})
     .then(()=>{
       const s=document.getElementById('mq-pub-success');
       s.style.display='block';setTimeout(()=>s.style.display='none',2500);
@@ -3158,10 +3196,13 @@ function publishMCQSet(){
   if(!db||!window._pendingMCQ){alert('Nothing to publish.');return;}
   const {subject,qs}=window._pendingMCQ;
   if(qs.length===0){alert('No questions to publish.');return;}
+  const subjectId=document.getElementById('mcq-subject-sel').value;
+  const courseId=document.getElementById('mcq-course-sel').value;
+  if(!subjectId){alert('Please select which subject to link this MCQ to!');return;}
   const id='mcq_'+Date.now();
   const btn=document.getElementById('mcq-pub-btn');
   btn.disabled=true;btn.textContent='Publishing...';
-  db.ref('medistudy_mcq/'+id).set({id,subject,qs,ts:Date.now(),count:qs.length})
+  db.ref('medistudy_mcq/'+id).set({id,subject,subjectId,courseId,qs,ts:Date.now(),count:qs.length})
     .then(()=>{
       const s=document.getElementById('mcq-pub-success');
       s.style.display='block';setTimeout(()=>s.style.display='none',2500);
