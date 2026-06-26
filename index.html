@@ -1830,8 +1830,8 @@ function courseIcon(i){return COURSE_ICONS[i%COURSE_ICONS.length];}
 function renderMaterial(){
   const c=document.getElementById('material-container');
   if(smView.level==='courses')renderCoursesList(c);
-  else if(smView.level==='subjects')renderSubjectsList(c);
-  else if(smView.level==='folders')renderFoldersList(c);
+  else if(smView.level==='subjects'){smView._subjTab=null;renderSubjectsList(c);}
+  else if(smView.level==='folders')renderFoldersList(c, smView._subjTab);
   else renderNotesList(c);
 }
 
@@ -1855,23 +1855,81 @@ function renderSubjectsList(c){
   }).join(''):'<div class="empty-state" style="grid-column:span 2">📭 No subjects yet.<br>Add via Admin → Structure!</div>'}</div>`;
 }
 
-function renderFoldersList(c){
+function renderFoldersList(c, activeTab){
+  activeTab = activeTab || smView._subjTab || 'notes';
+  smView._subjTab = activeTab;
   const co=courses.find(x=>x.id===smView.courseId),su=subjects.find(x=>x.id===smView.subjectId),coIdx=courses.indexOf(co);
   const fols=folders.filter(f=>f.subjectId===smView.subjectId);
   const vids=videos.filter(v=>v.subjectId===smView.subjectId);
-  let fHtml=fols.map((f,i)=>{const nc=notes.filter(n=>n.folderId===f.id).length;
-    return`<div class="folder-card" onclick="smView.level='notes';smView.folderId='${f.id}';renderMaterial()">
-      <div class="folder-icon">${FOLDER_ICONS[i%FOLDER_ICONS.length]}</div>
-      <div style="flex:1"><div class="folder-name">${f.name}</div><div class="folder-count">${nc} note${nc!==1?'s':''}</div></div><div class="folder-arrow">→</div></div>`;
-  }).join('');
-  if(vids.length)fHtml+=`<div class="folder-card" onclick="smView.level='notes';smView.folderId='__videos__';renderMaterial()">
-    <div class="folder-icon">🎥</div><div style="flex:1"><div class="folder-name">Videos</div><div class="folder-count">${vids.length} video${vids.length!==1?'s':''}</div></div><div class="folder-arrow">→</div></div>`;
-  if(!fHtml)fHtml='<div class="empty-state" style="grid-column:span 2">📭 No folders yet.<br>Add via Admin → Structure → Folders!</div>';
-  c.innerHTML=`<div class="breadcrumb">
+
+  // Build breadcrumb
+  const breadcrumb=`<div class="breadcrumb">
     <span class="bc-link" onclick="smView={level:'courses'};renderMaterial()">📚 Material</span><span class="bc-sep">›</span>
     <span class="bc-link" onclick="smView={level:'subjects',courseId:'${smView.courseId}'};renderMaterial()">${courseIcon(coIdx)} ${co?co.name:''}</span><span class="bc-sep">›</span>
-    <span class="bc-cur">🔬 ${su?su.name:''}</span></div>
-  <div class="folders-grid">${fHtml}</div>`;
+    <span class="bc-cur">🔬 ${su?su.name:''}</span></div>`;
+
+  // Build subject tabs
+  const tabs=`<div class="subject-inner-tabs">
+    <button class="sit ${activeTab==='notes'?'active':''}" onclick="renderFoldersList(document.getElementById('material-container'),'notes')">📝 Notes</button>
+    <button class="sit ${activeTab==='videos'?'active':''}" onclick="renderFoldersList(document.getElementById('material-container'),'videos')">🎥 Videos</button>
+    <button class="sit ${activeTab==='mcqs'?'active':''}" onclick="renderFoldersList(document.getElementById('material-container'),'mcqs')">🧠 MCQs</button>
+  </div>`;
+
+  let contentHtml='';
+
+  if(activeTab==='notes'){
+    let fHtml=fols.map((f,i)=>{const nc=notes.filter(n=>n.folderId===f.id).length;
+      return`<div class="folder-card" onclick="smView.level='notes';smView.folderId='${f.id}';renderMaterial()">
+        <div class="folder-icon">${FOLDER_ICONS[i%FOLDER_ICONS.length]}</div>
+        <div style="flex:1"><div class="folder-name">${f.name}</div><div class="folder-count">${nc} note${nc!==1?'s':''}</div></div><div class="folder-arrow">→</div></div>`;
+    }).join('');
+    if(!fHtml)fHtml='<div class="empty-state" style="grid-column:span 2">📭 No folders yet.<br>Add via Admin → Structure → Folders!</div>';
+    contentHtml=`<div class="folders-grid">${fHtml}</div>`;
+
+  } else if(activeTab==='videos'){
+    if(!vids.length){
+      contentHtml='<div class="empty-state">📭 No videos for this subject yet.</div>';
+    } else {
+      contentHtml=`<div class="videos-list">${vids.map(v=>`<div class="video-card">
+        <div class="video-thumb"><span class="yt-icon">▶️</span><span class="v-subject">${su?su.name.toUpperCase():''}</span></div>
+        <div class="video-body"><div class="video-info"><div class="video-title">${v.title}</div><div class="video-meta">${v.desc||'Video Lecture'}</div></div>
+        <div style="display:flex;gap:6px;flex-shrink:0;">
+          <button class="watch-btn" onclick="openVideo(this)" data-link="${v.link}" data-title="${v.title}">Watch ▶</button>
+          <button class="note-btn ${isVideoSaved(v.id)?'saved':''}" style="padding:6px 8px;" onclick="toggleSaveVideo(${JSON.stringify(v).replace(/"/g,'&quot;')});renderFoldersList(document.getElementById('material-container'),'videos')">${isVideoSaved(v.id)?'✅':'💾'}</button>
+        </div></div></div>`).join('')}</div>`;
+    }
+
+  } else if(activeTab==='mcqs'){
+    contentHtml='<div id="sm-mcq-list"><div style="text-align:center;padding:20px;font-size:13px;color:var(--muted);">Loading MCQs...</div></div>';
+  }
+
+  c.innerHTML=breadcrumb+tabs+contentHtml;
+
+  // Load MCQs from Firebase if on MCQ tab
+  if(activeTab==='mcqs'){
+    if(!db){
+      document.getElementById('sm-mcq-list').innerHTML='<div class="empty-state">📡 Requires internet connection.</div>';
+    } else {
+      db.ref('medistudy_mcq').orderByChild('ts').once('value',snap=>{
+        const el=document.getElementById('sm-mcq-list');
+        if(!el)return;
+        if(!snap||!snap.exists()){el.innerHTML='<div class="empty-state">📭 No MCQ sets published yet.</div>';return;}
+        let html='';
+        snap.forEach(c2=>{
+          const m=c2.val();
+          html=`<div class="note-card" style="cursor:pointer;" onclick="goPage('quiz');setTimeout(()=>startQuiz('${m.id}'),300)">
+            <div class="note-icon" style="background:#1a0e2a;">🧠</div>
+            <div class="note-info">
+              <div class="note-title">${escapeHTML(m.subject)}</div>
+              <div class="note-meta">${m.count} questions · ${new Date(m.ts).toLocaleDateString()}</div>
+            </div>
+            <div class="note-actions"><button class="note-btn" style="background:var(--purple);color:#fff;border-color:var(--purple);">Start →</button></div>
+          </div>`+html;
+        });
+        el.innerHTML=html||'<div class="empty-state">📭 No MCQ sets yet.</div>';
+      });
+    }
+  }
 }
 
 function renderNotesList(c){
