@@ -1310,7 +1310,7 @@ async function sendMsg(){
       chatHistory.push({role:'assistant',content:reply});
       addChatMsg('ai',reply);
     }
-  }catch(e){document.getElementById('typing')?.remove();addChatMsg('ai','⚠️ Connection error. Please check internet.');}
+  }catch(e){document.getElementById('typing')?.remove();console.error('MediBot error:',e);addChatMsg('ai','⚠️ Connection error: '+e.message+'. Please check internet.');}
   chatLoading=false;document.getElementById('chat-send').disabled=false;
 }
 function addChatMsg(role,text){
@@ -2266,7 +2266,7 @@ function flashSuccess(id,msg){const el=document.getElementById(id);if(!el)return
 function saveGeminiKey(){
   const key=document.getElementById('gemini-key-input').value.trim();
   if(!key||!key.startsWith('gsk_')){
-    document.getElementById('gemini-key-status').innerHTML='<span style="color:#e85d38">❌ Invalid key. Should start with sk-or...</span>';
+    document.getElementById('gemini-key-status').innerHTML='<span style="color:#e85d38">❌ Invalid key. Groq keys start with gsk_</span>';
     return;
   }
   localStorage.setItem('ms4_groq_key', key);
@@ -3938,22 +3938,28 @@ function startBatchChatListener(){
   batchChatListener = _chatRef.on('value', snap=>{
     const msgs=[];
     if(snap && snap.exists()){
-      snap.forEach(c=>{ const v=c.val(); if(v&&v.text)msgs.push(v); });
+      snap.forEach(c=>{ const v=c.val(); if(v&&v.text)msgs.push({...v,_key:c.key}); });
     }
     if(!msgs.length){
       msgEl.innerHTML='<div style="text-align:center;padding:40px;font-size:13px;color:var(--muted)">No messages yet. Say hello! 👋</div>';
       return;
     }
+    const wasAtBottom = msgEl.scrollHeight - msgEl.scrollTop - msgEl.clientHeight < 60;
     msgEl.innerHTML=msgs.map(m=>{
       const mine=m.name===chatUserName;
       const time=new Date(m.ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-      return`<div class="batch-msg ${mine?'mine':'theirs'}">
+      const k=m._key||'';
+      return`<div class="batch-msg ${mine?'mine':'theirs'}" data-key="${k}">
         <div class="batch-msg-name">${mine?'You':escapeHTML(m.name||'')}</div>
         <div class="batch-msg-bubble">${escapeHTML(m.text||'')}</div>
         <div class="batch-msg-time">${time}</div>
+        <div class="batch-msg-reactions" id="rxn-${k}">
+          <button class="react-add-btn" onclick="openEmojiPicker(event,'${k}')" title="React">+</button>
+        </div>
       </div>`;
     }).join('');
-    msgEl.scrollTop=msgEl.scrollHeight;
+    if(wasAtBottom) msgEl.scrollTop=msgEl.scrollHeight;
+    msgs.forEach(m=>{ if(m._key) loadReactions(m._key); });
   }, err=>{
     console.error('Chat listener error:', err);
     msgEl.innerHTML='<div style="text-align:center;padding:20px;font-size:13px;color:#e85d38">⚠️ Connection lost. Check internet.</div>';
