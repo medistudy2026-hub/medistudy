@@ -1288,10 +1288,10 @@ async function sendMsg(){
     const res=await fetch(WORKER_URL,{
       method:'POST',
       headers:{
-        'Content-Type':'application/json',
-        'X-User-ID': userId
+        'Content-Type':'application/json'
       },
       body:JSON.stringify({
+        userId: userId,
         model:'llama-3.3-70b-versatile',
         messages:[
           {role:'system', content:SYSTEM},
