@@ -1208,7 +1208,7 @@ function updateHomeBanner(){
   const el=document.getElementById('home-fb-banner');if(!el)return;
   el.innerHTML=fbConnected
     ?`<div class="fb-banner"><div class="fb-dot online"></div><span style="color:var(--green);font-weight:600;">Live</span> — Connected to Firebase. Notes sync across all devices.</div>`
-    :`<div class="fb-banner"><div class="fb-dot local"></div><span>Local mode</span> — <span style="color:var(--muted);">Notes only on this device. <span style="color:var(--accent);cursor:pointer" onclick="openAdmin()">Connect Firebase →</span></span></div>`;
+    :`<div class="fb-banner"><div class="fb-dot local"></div><span>Local mode</span> — <span style="color:var(--muted);">Notes only on this device. <span style="color:var(--accent);cursor:pointer" onclick="location.reload()">Refresh →</span></span></div>`;
 }
 
 // ═══════════════ THEME ═══════════════
