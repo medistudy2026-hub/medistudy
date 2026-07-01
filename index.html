@@ -417,6 +417,16 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 .pwa-banner-sub{font-size:11px;color:var(--muted);}
 .pwa-install-btn{padding:8px 16px;background:var(--accent);color:#0e0f13;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-size:12px;white-space:nowrap;font-family:var(--sans);}
 .pwa-dismiss-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:4px;}
+
+.batch-msg-reactions{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px;align-items:center;}
+.react-add-btn{width:22px;height:22px;border-radius:50%;background:var(--card);border:1px solid var(--border);color:var(--muted);font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
+.react-add-btn:hover{background:var(--border);color:var(--text);}
+.react-chip{display:inline-flex;align-items:center;gap:3px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:2px 8px;font-size:12px;cursor:pointer;line-height:1.4;}
+.react-chip.mine{background:rgba(232,168,56,.18);border-color:var(--accent);}
+.react-chip .rc-count{font-size:10px;color:var(--muted);}
+.emoji-picker-popup{position:fixed;z-index:2000;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:8px;display:flex;gap:4px;box-shadow:0 8px 24px rgba(0,0,0,.4);}
+.emoji-picker-popup button{background:none;border:none;font-size:22px;cursor:pointer;padding:4px 6px;border-radius:8px;line-height:1;}
+.emoji-picker-popup button:hover{background:var(--border);}
 </style>
 
   <!-- Google Analytics -->
@@ -4016,6 +4026,76 @@ function sendBatchMsg(){
 function escapeHTML(str){
   if(!str) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ═══════════════ CHAT REACTIONS ═══════════════
+const REACTION_EMOJIS=['👍','❤️','😂','😮','🙏'];
+let _reactionListeners={}; // msgKey -> {ref, cb} so we can detach old listeners and avoid duplicates
+
+function reactUserKey(){
+  // Firebase keys can't contain . # $ [ ] /  — sanitize the chat display name to use as this user's reaction key
+  return (chatUserName||'guest').replace(/[.#$\[\]\/]/g,'_');
+}
+
+function openEmojiPicker(event,msgKey){
+  event.stopPropagation();
+  closeEmojiPicker();
+  const btn=event.currentTarget;
+  const rect=btn.getBoundingClientRect();
+  const pop=document.createElement('div');
+  pop.className='emoji-picker-popup';
+  pop.id='emoji-picker-popup';
+  pop.innerHTML=REACTION_EMOJIS.map(e=>`<button onclick="selectReaction('${msgKey}','${e}')">${e}</button>`).join('');
+  document.body.appendChild(pop);
+  const pw=pop.offsetWidth||200;
+  let left=rect.left;
+  if(left+pw>window.innerWidth-8) left=window.innerWidth-pw-8;
+  if(left<8) left=8;
+  let top=rect.top-46;
+  if(top<8) top=rect.bottom+6;
+  pop.style.left=left+'px';
+  pop.style.top=top+'px';
+  setTimeout(()=>document.addEventListener('click',closeEmojiPicker,{once:true}),0);
+}
+
+function closeEmojiPicker(){
+  const pop=document.getElementById('emoji-picker-popup');
+  if(pop)pop.remove();
+}
+
+function selectReaction(msgKey,emoji){
+  closeEmojiPicker();
+  if(!db||!fbConnected){showOfflineToast('📡 No connection',false);return;}
+  const uKey=reactUserKey();
+  const ref=db.ref('medistudy_chat_reactions/'+msgKey+'/'+emoji+'/'+uKey);
+  ref.once('value',snap=>{
+    if(snap.exists())ref.remove();else ref.set(true);
+  });
+}
+
+function loadReactions(msgKey){
+  if(!db)return;
+  if(_reactionListeners[msgKey]){
+    try{ _reactionListeners[msgKey].ref.off('value',_reactionListeners[msgKey].cb); }catch(e){}
+  }
+  const ref=db.ref('medistudy_chat_reactions/'+msgKey);
+  const cb=ref.on('value',snap=>{
+    const el=document.getElementById('rxn-'+msgKey);
+    if(!el)return; // message not currently on screen (scrolled off / replaced)
+    const data=snap.val()||{};
+    const uKey=reactUserKey();
+    let chips='';
+    REACTION_EMOJIS.forEach(e=>{
+      const users=data[e];
+      const keys=users?Object.keys(users):[];
+      if(keys.length){
+        const mine=!!users[uKey];
+        chips+=`<span class="react-chip ${mine?'mine':''}" onclick="selectReaction('${msgKey}','${e}')">${e}<span class="rc-count">${keys.length}</span></span>`;
+      }
+    });
+    el.innerHTML=chips+`<button class="react-add-btn" onclick="openEmojiPicker(event,'${msgKey}')" title="React">+</button>`;
+  });
+  _reactionListeners[msgKey]={ref,cb};
 }
 
 function trimChatMessages(){
