@@ -1200,7 +1200,7 @@ function connectFirebase(){
 }
 let auth=null, currentUser=null, authReady=false;
 // Fallback: if Firebase Auth doesn't load in 8s, unlock all pages anyway
-setTimeout(()=>{ if(!authReady){ authReady=true; } }, 8000);
+setTimeout(()=>{ if(!authReady){ authReady=true; } restoreLastScreen(); }, 8000);
 
 function initFirebase(cb){
   if(!fbConfig){updateFBStatus();return;}
@@ -1215,6 +1215,7 @@ function initFirebase(cb){
           currentUser=user;
           authReady=true;
           updateAuthUI();
+          restoreLastScreen();
           const warnEl=document.getElementById('admin-signedin-warning');
           if(warnEl) warnEl.style.display = currentUser ? 'none' : 'block';
           if(user){
@@ -1269,6 +1270,30 @@ applyTheme();
 // ═══════════════ NAVIGATION ═══════════════
 const LOGIN_GATED={'tutor':'MediBot AI','chat':'Batch Chat','planner':'Planner','progress':'Progress Tracker','quiz':'MCQ Quiz'};
 let isBackNav=false;
+// Remember which screen the student was on, so a refresh reopens it instead of always jumping to Home
+function saveLastScreen(id){
+  try{
+    const data={id:id};
+    if(id==='material') data.smView=smView;
+    localStorage.setItem('ms_lastScreen', JSON.stringify(data));
+  }catch(e){}
+}
+let lastScreenRestored=false;
+function restoreLastScreen(){
+  if(lastScreenRestored) return;
+  lastScreenRestored=true;
+  try{
+    const raw=localStorage.getItem('ms_lastScreen');
+    if(!raw) return;
+    const data=JSON.parse(raw);
+    if(!data || !data.id || data.id==='home' || data.id==='about') return;
+    // Don't auto-reopen a locked page if the student isn't signed in — just stay on Home
+    if(LOGIN_GATED[data.id] && !currentUser) return;
+    if(!document.getElementById('page-'+data.id)) return;
+    goPage(data.id, true);
+    if(data.id==='material' && data.smView) goMaterialView(data.smView);
+  }catch(e){}
+}
 function goPage(id,addToHistory=true){
   // Gate check for protected pages
   if(authReady && LOGIN_GATED[id] && !currentUser){
@@ -1293,12 +1318,14 @@ function goPage(id,addToHistory=true){
   if(id==='progress')renderProgress();
   if(id==='chat'){chatInitAttempts=0;initBatchChat();}
   if(id==='quiz')showQuizHome();
+  saveLastScreen(id);
 }
 // Change the view WITHIN Study Material (course/subject/folder drill-down) and track it in history
 function goMaterialView(view){
   smView=view;
   try{ history.pushState({msPage:'material',smView:view},'',location.pathname+location.search); }catch(e){}
   renderMaterial();
+  saveLastScreen('material');
 }
 // Set the very first history entry to Home so the first back press always lands there before exiting the app
 try{ history.replaceState({msPage:'home'},'',location.pathname+location.search); }catch(e){}
