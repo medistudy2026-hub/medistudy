@@ -525,6 +525,19 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
           <option value="6th Course">6th Course</option>
         </select>
       </div>
+      <div class="form-group" style="margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:5px;">GENDER (OPTIONAL)</label>
+        <select id="profile-gender-inp" class="lb-input" style="margin-bottom:0;">
+          <option value="">Prefer not to say</option>
+          <option value="Male">Male</option>
+          <option value="Female">Female</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:5px;">AGE (OPTIONAL)</label>
+        <input type="number" id="profile-age-inp" class="lb-input" placeholder="e.g. 20" min="15" max="60" style="margin-bottom:0;">
+      </div>
       <button class="profile-edit-btn" onclick="saveProfile()">💾 Save Profile</button>
       <button class="profile-close-btn" onclick="showProfileView()">Cancel</button>
     </div>
@@ -887,6 +900,9 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
     </div>
     <div id="admin-panel" style="display:none;">
       <div class="modal-sub">Manage your app content</div>
+      <div id="admin-signedin-warning" style="display:none;background:rgba(232,93,56,0.15);border:1px solid #e85d38;color:#e85d38;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:12px;font-weight:600;">
+        ⚠️ You're not signed in with your account. Saves will fail — go to Login and sign in with your email/Google first, then come back here.
+      </div>
       <div class="admin-tabs">
         <div class="atab active" onclick="switchATab('structure',this)">🏗️ Structure</div>
         <div class="atab" onclick="switchATab('notes',this)">📝 Note</div>
@@ -894,6 +910,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
         <div class="atab" onclick="switchATab('manage',this)">🗑️ Manage</div>
         <div class="atab" onclick="switchATab('announce',this)">📢 Announce</div>
         <div class="atab" onclick="switchATab('mcq',this)">🧠 MCQ</div>
+        <div class="atab" onclick="switchATab('students',this)">👥 Students</div>
         <div class="atab" onclick="switchATab('firebase',this)">🔥 Firebase</div>
       </div>
       <!-- STRUCTURE -->
@@ -1066,6 +1083,19 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
         <div id="admin-mcq-list" style="font-size:12px;color:var(--muted);">Loading...</div>
       </div>
 
+      <!-- STUDENTS -->
+      <div class="aform" id="aform-students">
+        <div class="section-label">👥 Registered Students</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+          <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px;">
+            <input type="checkbox" id="students-today-only" onchange="renderStudentsList()"> Today's logins only
+          </label>
+          <button onclick="loadStudentsList()" style="margin-left:auto;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer;">🔄 Refresh</button>
+        </div>
+        <div id="students-summary" style="font-size:12px;color:var(--muted);margin-bottom:10px;"></div>
+        <div id="students-list"></div>
+      </div>
+
       <!-- FIREBASE -->
       <div class="aform" id="aform-firebase">
         <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px;">
@@ -1185,7 +1215,16 @@ function initFirebase(cb){
           currentUser=user;
           authReady=true;
           updateAuthUI();
-          if(user) loadUserDataFromFirebase();
+          const warnEl=document.getElementById('admin-signedin-warning');
+          if(warnEl) warnEl.style.display = currentUser ? 'none' : 'block';
+          if(user){
+            loadUserDataFromFirebase();
+            // Record login info so the admin panel can show who used the app and when
+            db.ref('users/'+user.uid).update({
+              email: user.email||'',
+              lastLogin: Date.now()
+            }).catch(e=>console.warn('Login log failed:',e));
+          }
         });
       }
       if(cb)cb();
@@ -2116,6 +2155,7 @@ function checkPw(){
 function showPanel(){
   document.getElementById('admin-login').style.display='none';
   document.getElementById('admin-panel').style.display='block';
+  document.getElementById('admin-signedin-warning').style.display = currentUser ? 'none' : 'block';
   populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();updateFBStatus();
   if(fbConfig){
     document.getElementById('fb-api-key').value=fbConfig.apiKey||'';
@@ -2136,6 +2176,7 @@ function switchATab(tab,el){
   if(tab==='firebase')updateFBStatus();
   if(tab==='announce')loadAdminAnnouncements();
   if(tab==='mcq'){loadAdminMCQSets();populateMCQSubjectDropdowns();}
+  if(tab==='students')loadStudentsList();
 }
 function populateAllSelects(){
   ['struct-course-sel','note-course','vid-course','struct-fcourse'].forEach(id=>{
@@ -2481,7 +2522,9 @@ function openVideo(elOrLink, ttlOverride, linkOverride) {
   }
 
   if(typeof gtag !== 'undefined') {
-    gtag('event', 'video_opened', { event_category: 'Videos', event_label: ttl });
+    const vco = courses.find(c=>c.id===currentVideo.courseId);
+    const vsu = vco && vco.subjects ? vco.subjects.find(s=>s.id===currentVideo.subjectId) : null;
+    gtag('event', 'video_opened', { event_category: 'Videos', event_label: ttl, course: vco?vco.name:'', subject: vsu?vsu.name:'' });
   }
   setTimeout(updateVideoSaveBtn, 100);
 }
@@ -2666,7 +2709,7 @@ window.addEventListener('beforeinstallprompt', e => {
 });
 
 // ═══════════════ PROFILE ═══════════════
-let userProfile = JSON.parse(localStorage.getItem('ms_profile') || '{"name":"","course":""}');
+let userProfile = JSON.parse(localStorage.getItem('ms_profile') || '{"name":"","course":"","gender":"","age":""}');
 
 function getInitials(name){
   if(!name) return '👤';
@@ -2703,6 +2746,8 @@ function showProfileView(){
 function showProfileEdit(){
   document.getElementById('profile-name-inp').value = userProfile.name;
   document.getElementById('profile-course-inp').value = userProfile.course;
+  document.getElementById('profile-gender-inp').value = userProfile.gender||'';
+  document.getElementById('profile-age-inp').value = userProfile.age||'';
   document.getElementById('profile-loggedout-view').style.display='none';
   document.getElementById('profile-view').style.display='none';
   document.getElementById('profile-edit-form').style.display='block';
@@ -2710,6 +2755,9 @@ function showProfileEdit(){
 function saveProfile(){
   userProfile.name = document.getElementById('profile-name-inp').value.trim();
   userProfile.course = document.getElementById('profile-course-inp').value;
+  userProfile.gender = document.getElementById('profile-gender-inp').value;
+  const ageVal = document.getElementById('profile-age-inp').value;
+  userProfile.age = ageVal ? parseInt(ageVal) : '';
   localStorage.setItem('ms_profile', JSON.stringify(userProfile));
   syncToFirebase('profile', userProfile);
   updateProfileUI();
@@ -3314,6 +3362,9 @@ function startQuiz(id){
     document.getElementById('quiz-result').style.display='none';
     document.getElementById('quiz-active').style.display='block';
     showQuestion();
+    if(typeof gtag !== 'undefined'){
+      gtag('event','quiz_started',{event_category:'Quiz', event_label: set.title||id});
+    }
   });
 }
 
@@ -3376,6 +3427,9 @@ function showQuizResult(){
   else if(pct>=40){emoji='📚';msg='Keep going — revise and try again.';}
   document.getElementById('quiz-result-emoji').textContent=emoji;
   document.getElementById('quiz-result-msg').textContent=msg;
+  if(typeof gtag !== 'undefined'){
+    gtag('event','quiz_completed',{event_category:'Quiz', event_label: currentQuizSet?currentQuizSet.title:'', value: pct});
+  }
 }
 
 function reviewQuiz(){
@@ -3438,9 +3492,12 @@ window.goPage = function(id) {
 const originalOpenPDF = openPDF;
 window.openPDF = function(note) {
   originalOpenPDF(note);
+  const ctx = getMaterialContext();
   gtag('event', 'note_opened', {
     event_category: 'Study Material',
-    event_label: note.topic
+    event_label: note.topic,
+    course: ctx.course,
+    subject: ctx.subject
   });
 };
 
@@ -3453,6 +3510,28 @@ window.toggleSaveNote = function(note) {
     event_category: 'Offline',
     event_label: note.topic
   });
+};
+
+// Helper: get current course/subject names from smView, for tagging events with context
+function getMaterialContext(){
+  try{
+    const co = courses.find(c=>c.id===smView.courseId);
+    const su = co && co.subjects ? co.subjects.find(s=>s.id===smView.subjectId) : null;
+    return { course: co?co.name:'', subject: su?su.name:'' };
+  }catch(e){ return { course:'', subject:'' }; }
+}
+
+// Track course/subject/folder browsing inside Study Material
+const originalGoMaterialView = goMaterialView;
+window.goMaterialView = function(view){
+  originalGoMaterialView(view);
+  if(view.level==='subjects'){
+    const co = courses.find(c=>c.id===view.courseId);
+    gtag('event','course_viewed',{event_category:'Study Material', event_label: co?co.name:''});
+  } else if(view.level==='folders'){
+    const ctx = getMaterialContext();
+    gtag('event','subject_viewed',{event_category:'Study Material', event_label: ctx.subject, course: ctx.course});
+  }
 };
 
 // Track AI chat usage
@@ -4096,6 +4175,56 @@ function loadReactions(msgKey){
     el.innerHTML=chips+`<button class="react-add-btn" onclick="openEmojiPicker(event,'${msgKey}')" title="React">+</button>`;
   });
   _reactionListeners[msgKey]={ref,cb};
+}
+
+// ═══════════════ ADMIN: STUDENTS LIST ═══════════════
+let _allStudents=[];
+function loadStudentsList(){
+  const listEl=document.getElementById('students-list');
+  const sumEl=document.getElementById('students-summary');
+  if(!db||!fbConnected){ listEl.innerHTML='<div style="color:var(--muted);font-size:12px;">Connect Firebase first.</div>'; return; }
+  sumEl.textContent='Loading...';
+  listEl.innerHTML='';
+  db.ref('users').once('value',snap=>{
+    const data=snap.val()||{};
+    _allStudents=Object.keys(data).map(uid=>{
+      const u=data[uid]||{};
+      const p=u.profile||{};
+      return {
+        uid,
+        name: p.name||'(no name set)',
+        email: u.email||'—',
+        course: p.course||'—',
+        gender: p.gender||'—',
+        age: p.age||'—',
+        lastLogin: u.lastLogin||0
+      };
+    }).sort((a,b)=>b.lastLogin-a.lastLogin);
+    renderStudentsList();
+  },err=>{
+    sumEl.textContent='';
+    listEl.innerHTML='<div style="color:#e85d38;font-size:12px;">⚠️ Could not load students. If this is a permissions error, your Firebase rules need to allow your admin account to read the "users" node.</div>';
+    console.error(err);
+  });
+}
+function renderStudentsList(){
+  const listEl=document.getElementById('students-list');
+  const sumEl=document.getElementById('students-summary');
+  const todayOnly=document.getElementById('students-today-only').checked;
+  const startOfToday=new Date(); startOfToday.setHours(0,0,0,0);
+  const todayTs=startOfToday.getTime();
+  const rows=todayOnly?_allStudents.filter(s=>s.lastLogin>=todayTs):_allStudents;
+  sumEl.textContent=`${rows.length} of ${_allStudents.length} total registered students`+(todayOnly?' (logged in today)':'');
+  if(!rows.length){ listEl.innerHTML='<div style="color:var(--muted);font-size:12px;">No students found.</div>'; return; }
+  listEl.innerHTML=rows.map(s=>{
+    const when=s.lastLogin?new Date(s.lastLogin).toLocaleString():'never';
+    return `<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:12px;">
+      <div style="font-weight:700;margin-bottom:2px;">${escapeHTML(s.name)}</div>
+      <div style="color:var(--muted);">✉️ ${escapeHTML(s.email)}</div>
+      <div style="color:var(--muted);">🎓 ${escapeHTML(s.course)} &nbsp; ⚧ ${escapeHTML(s.gender)} &nbsp; 🎂 ${escapeHTML(String(s.age))}</div>
+      <div style="color:var(--muted);">🕒 Last login: ${when}</div>
+    </div>`;
+  }).join('');
 }
 
 function trimChatMessages(){
