@@ -126,6 +126,10 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 .notes-list{display:flex;flex-direction:column;gap:8px;}
 .note-card{background:var(--card);border:1px solid var(--border);border-radius:11px;padding:14px;display:flex;align-items:center;gap:12px;transition:all .2s;}
 .note-card:hover{border-color:var(--accent);}
+.ess-card{background:var(--card);border:1px solid var(--border);border-radius:11px;margin-bottom:10px;overflow:hidden;}
+.ess-title{padding:14px;font-weight:600;font-size:13.5px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.ess-arrow{color:var(--muted);font-size:12px;transition:transform .2s;}
+.ess-content{padding:0 14px 14px;font-size:12.5px;color:var(--muted);line-height:1.7;white-space:pre-wrap;}
 .note-icon{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;background:var(--surface);}
 .note-info{flex:1;min-width:0;}
 .note-title{font-size:13px;font-weight:600;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -475,7 +479,8 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
     <button class="nav-tab" onclick="goPage('progress')">📊</button>
     <button class="nav-tab" onclick="goPage('chat')">💬</button>
     <button class="nav-tab" onclick="goPage('quiz')">🧠</button>
-    <button class="nav-tab" onclick="goPage('about')">👤</button>  </div>
+    <button class="nav-tab" onclick="goPage('about')">👤</button>
+    <button class="nav-tab" onclick="goPage('essentials')">🎓</button>  </div>
   <div class="nav-right">
     <button class="theme-btn" id="theme-btn" onclick="toggleTheme()">🌙</button>
     <button class="profile-avatar-btn" id="profile-avatar-btn" onclick="openProfile()" title="My Profile">👤</button>
@@ -556,6 +561,8 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
     <div class="home-card" onclick="goPage('progress')"><span class="hc-icon">📊</span><div class="hc-title">Progress</div><div class="hc-desc">Track topics done per subject</div><div class="hc-arrow">→</div></div>
     <div class="home-card" onclick="goPage('chat')"><span class="hc-icon">💬</span><div class="hc-title">Batch Chat</div><div class="hc-desc">Chat with your batchmates live</div><div class="hc-arrow">→</div></div>
     <div class="home-card" onclick="goPage('planner')"><span class="hc-icon">📅</span><div class="hc-title">Study Planner</div><div class="hc-desc">Exam countdown & daily goals</div><div class="hc-arrow">→</div></div>
+    <div class="home-card" onclick="goPage('essentials')"><span class="hc-icon">🎓</span><div class="hc-title">Student Essentials (Office)</div><div class="hc-desc">Registration, SIM, medical checkup & rules</div><div class="hc-arrow">→</div></div>
+    <div class="home-card" onclick="goPage('about')"><span class="hc-icon">👤</span><div class="hc-title">About</div><div class="hc-desc">Developer info & app details</div><div class="hc-arrow">→</div></div>
   </div>
 </div>
 <!-- SEARCH -->
@@ -685,6 +692,15 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
     <div class="contact-info"><h4>Connect with me</h4><p>@ankitsahu_58_ on Instagram</p></div>
     <a class="insta-btn" href="https://instagram.com/ankitsahu_58_" target="_blank">📸 Instagram</a>
   </div>
+  <div style="text-align:center;margin-top:16px;">
+    <a href="#" onclick="openAdmin();return false;" style="font-size:11px;color:var(--muted);text-decoration:underline;">Sponsor / Editor / Team Login</a>
+  </div>
+</div>
+<!-- STUDENT ESSENTIALS -->
+<div class="page" id="page-essentials">
+  <div class="sec-title">🎓 Student <em>Essentials (Office)</em></div>
+  <div class="sec-sub">Registration, SIM card, medical checkup & university rules — all in one place</div>
+  <div id="ess-list">Loading...</div>
 </div>
 <!-- QUICK NOTES -->
 <div class="page" id="page-quicknotes">
@@ -904,14 +920,15 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
         ⚠️ You're not signed in with your account. Saves will fail — go to Login and sign in with your email/Google first, then come back here.
       </div>
       <div class="admin-tabs">
-        <div class="atab active" onclick="switchATab('structure',this)">🏗️ Structure</div>
-        <div class="atab" onclick="switchATab('notes',this)">📝 Note</div>
-        <div class="atab" onclick="switchATab('videos',this)">🎥 Video</div>
-        <div class="atab" onclick="switchATab('manage',this)">🗑️ Manage</div>
-        <div class="atab" onclick="switchATab('announce',this)">📢 Announce</div>
-        <div class="atab" onclick="switchATab('mcq',this)">🧠 MCQ</div>
-        <div class="atab" onclick="switchATab('students',this)">👥 Students</div>
-        <div class="atab" onclick="switchATab('firebase',this)">🔥 Firebase</div>
+        <div class="atab active" id="atab-structure" onclick="switchATab('structure',this)">🏗️ Structure</div>
+        <div class="atab" id="atab-notes" onclick="switchATab('notes',this)">📝 Note</div>
+        <div class="atab" id="atab-videos" onclick="switchATab('videos',this)">🎥 Video</div>
+        <div class="atab" id="atab-manage" onclick="switchATab('manage',this)">🗑️ Manage</div>
+        <div class="atab" id="atab-announce" onclick="switchATab('announce',this)">📢 Announce</div>
+        <div class="atab" id="atab-essentials" onclick="switchATab('essentials',this)">🎓 Essentials (Office)</div>
+        <div class="atab" id="atab-mcq" onclick="switchATab('mcq',this)">🧠 MCQ</div>
+        <div class="atab" id="atab-students" onclick="switchATab('students',this)">👥 Students</div>
+        <div class="atab" id="atab-firebase" onclick="switchATab('firebase',this)">🔥 Firebase</div>
       </div>
       <!-- STRUCTURE -->
       <div class="aform active" id="aform-structure">
@@ -980,6 +997,16 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
         <div class="success-msg" id="ann-success">✅ Announcement posted!</div>
         <div class="section-label" style="margin-top:16px;">Active Announcements</div>
         <div id="admin-ann-list" style="font-size:12px;color:var(--muted);">Loading...</div>
+      </div>
+      <!-- STUDENT ESSENTIALS -->
+      <div class="aform" id="aform-essentials">
+        <div class="section-label">🎓 Add Student Essential (Office)</div>
+        <div class="form-group"><label>TITLE</label><input type="text" id="ess-title-input" placeholder="e.g. How to get registration"></div>
+        <div class="form-group"><label>CONTENT</label><textarea id="ess-content-input" placeholder="Step-by-step process, office hours, documents needed, etc." style="height:120px;"></textarea></div>
+        <button class="submit-btn" onclick="addEssential()">➕ Add to Student Essentials (Office)</button>
+        <div class="success-msg" id="ess-success">✅ Added!</div>
+        <div class="section-label" style="margin-top:16px;">Current Essentials</div>
+        <div id="admin-ess-list" style="font-size:12px;color:var(--muted);">Loading...</div>
       </div>
       <!-- MCQ -->
       <div class="aform" id="aform-mcq">
@@ -1138,6 +1165,11 @@ let fbConfig = JSON.parse(localStorage.getItem('ms4_fbconfig') || 'null');
 let fbConnected=false, db=null, adminUnlocked=false;
 let chatHistory=[], chatLoading=false, currentPDF=null;
 const PASS_HASH='226a0d3bb5dd67d71cd7158a8615bdef9c13dc01123137396dc94c038b0bbd57';
+// Limited "Sponsor" access — sees only Announcements + Student Essentials, nothing else. Default password: Yulia@2026 (Ankit can change this by editing the hash below)
+const SPONSOR_HASH='f5a0025e6984519a96aa0e64b229b8fc38464e09d09cb4ca7061ec7f310ebf89';
+// Limited "Editor" access — sees only Structure, Notes, Videos, Manage, MCQ. No Announce/Essentials/Students/Firebase. Default password: Editor@2026
+const EDITOR_HASH='b2cb491f327eab7dee2b56732e0183918e692bfab65ca5b340fc1596d2361775';
+let adminRole=null; // 'admin', 'sponsor', or 'editor'
 const COURSE_ICONS=['📘','📗','📙','📕','📓','📔'];
 const FOLDER_ICONS=['📁','📝','⚡','💡','📌','🗒️','📊','🔖'];
 
@@ -1306,7 +1338,7 @@ function goPage(id,addToHistory=true){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
-  const map={home:0,search:1,tutor:2,material:3,videos:4,saved:5,planner:6,leaderboard:7,quicknotes:8,progress:9,chat:10,quiz:11,about:12};
+  const map={home:0,search:1,tutor:2,material:3,videos:4,saved:5,planner:6,leaderboard:7,quicknotes:8,progress:9,chat:10,quiz:11,about:12,essentials:13};
   if(map[id]!==undefined)document.querySelectorAll('.nav-tab')[map[id]].classList.add('active');
   if(id==='material'){if(!wasBackNav)smView={level:'courses'};renderMaterial();}
   if(id==='videos')renderVideosPage();
@@ -1318,6 +1350,7 @@ function goPage(id,addToHistory=true){
   if(id==='progress')renderProgress();
   if(id==='chat'){chatInitAttempts=0;initBatchChat();}
   if(id==='quiz')showQuizHome();
+  if(id==='essentials')renderEssentials();
   saveLastScreen(id);
 }
 // Change the view WITHIN Study Material (course/subject/folder drill-down) and track it in history
@@ -2175,7 +2208,9 @@ function checkPw(){
   crypto.subtle.digest('SHA-256',msgBuffer).then(hashBuffer=>{
     const hashArray=Array.from(new Uint8Array(hashBuffer));
     const hashHex=hashArray.map(b=>b.toString(16).padStart(2,'0')).join('');
-    if(hashHex===PASS_HASH){adminUnlocked=true;showPanel();}
+    if(hashHex===PASS_HASH){adminUnlocked=true;adminRole='admin';showPanel();}
+    else if(hashHex===SPONSOR_HASH){adminUnlocked=true;adminRole='sponsor';showPanel();}
+    else if(hashHex===EDITOR_HASH){adminUnlocked=true;adminRole='editor';showPanel();}
     else document.getElementById('login-err').style.display='block';
   });
 }
@@ -2183,6 +2218,23 @@ function showPanel(){
   document.getElementById('admin-login').style.display='none';
   document.getElementById('admin-panel').style.display='block';
   document.getElementById('admin-signedin-warning').style.display = currentUser ? 'none' : 'block';
+  if(adminRole==='sponsor'){
+    // Limited view: only Announcements + Student Essentials, nothing else
+    document.querySelectorAll('.atab').forEach(t=>t.style.display='none');
+    document.getElementById('atab-announce').style.display='';
+    document.getElementById('atab-essentials').style.display='';
+    switchATab('announce', document.getElementById('atab-announce'));
+    return;
+  }
+  if(adminRole==='editor'){
+    // Limited view: Structure, Notes, Videos, Manage, MCQ only — no Announce/Essentials/Students/Firebase
+    document.querySelectorAll('.atab').forEach(t=>t.style.display='none');
+    ['atab-structure','atab-notes','atab-videos','atab-manage','atab-mcq'].forEach(id=>{document.getElementById(id).style.display='';});
+    populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();
+    switchATab('structure', document.getElementById('atab-structure'));
+    return;
+  }
+  document.querySelectorAll('.atab').forEach(t=>t.style.display='');
   populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();updateFBStatus();
   if(fbConfig){
     document.getElementById('fb-api-key').value=fbConfig.apiKey||'';
@@ -2202,6 +2254,7 @@ function switchATab(tab,el){
   if(tab==='videos')updateVidSubjects();
   if(tab==='firebase')updateFBStatus();
   if(tab==='announce')loadAdminAnnouncements();
+  if(tab==='essentials')loadAdminEssentials();
   if(tab==='mcq'){loadAdminMCQSets();populateMCQSubjectDropdowns();}
   if(tab==='students')loadStudentsList();
 }
@@ -3088,6 +3141,70 @@ function dismissAnnouncement(){
     localStorage.setItem('ms_dismissed_anns',JSON.stringify(dismissed));
   }
   banner.style.display='none';
+}
+
+// ═══════════════ STUDENT ESSENTIALS ═══════════════
+// Public reference section: registration, SIM card, medical checkup, university rules etc.
+function renderEssentials(){
+  const el=document.getElementById('ess-list');
+  if(!el)return;
+  if(!db){el.innerHTML='<div style="color:var(--muted);font-size:12px;">Not connected.</div>';return;}
+  db.ref('medistudy_essentials').orderByChild('order').once('value',snap=>{
+    if(!snap||!snap.exists()){el.innerHTML='<div style="color:var(--muted);font-size:13px;padding:20px 0;text-align:center;">Nothing added yet. Check back soon!</div>';return;}
+    const items=[];
+    snap.forEach(c=>items.push(c.val()));
+    el.innerHTML=items.map((it,i)=>`
+      <div class="ess-card">
+        <div class="ess-title" onclick="toggleEss(${i})"><span>${escapeHTML(it.title)}</span><span class="ess-arrow" id="ess-arrow-${i}">▾</span></div>
+        <div class="ess-content" id="ess-content-${i}" style="display:none;">${escapeHTML(it.content)}</div>
+      </div>`).join('');
+  });
+}
+function toggleEss(i){
+  const c=document.getElementById('ess-content-'+i),a=document.getElementById('ess-arrow-'+i);
+  if(!c)return;
+  const open=c.style.display!=='none';
+  c.style.display=open?'none':'block';
+  if(a)a.textContent=open?'▾':'▴';
+}
+// ── Admin/Sponsor: add, list, delete essentials ──
+function addEssential(){
+  if(!db){alert('Firebase not connected.');return;}
+  const title=document.getElementById('ess-title-input').value.trim();
+  const content=document.getElementById('ess-content-input').value.trim();
+  if(!title||!content){alert('Fill in title and content.');return;}
+  const id='ess_'+Date.now();
+  db.ref('medistudy_essentials/'+id).set({id,title,content,order:Date.now(),ts:Date.now()})
+    .then(()=>{
+      document.getElementById('ess-title-input').value='';
+      document.getElementById('ess-content-input').value='';
+      const s=document.getElementById('ess-success');
+      s.style.display='block';setTimeout(()=>s.style.display='none',2500);
+      loadAdminEssentials();
+    })
+    .catch(e=>alert('Failed: '+e.message));
+}
+function loadAdminEssentials(){
+  if(!db)return;
+  const el=document.getElementById('admin-ess-list');
+  if(!el)return;
+  db.ref('medistudy_essentials').orderByChild('order').once('value',snap=>{
+    if(!snap||!snap.exists()){el.innerHTML='<div style="color:var(--muted);font-size:12px;">No essentials added yet.</div>';return;}
+    let html='';
+    snap.forEach(c=>{
+      const it=c.val();
+      html+=`<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;position:relative;">
+        <div style="font-weight:700;font-size:12px;padding-right:60px;">${escapeHTML(it.title)}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;white-space:pre-wrap;">${escapeHTML(it.content)}</div>
+        <button onclick="deleteEssential('${it.id}')" style="position:absolute;top:8px;right:8px;background:#e85d38;border:none;border-radius:5px;color:#fff;font-size:10px;padding:2px 7px;cursor:pointer;">Delete</button>
+      </div>`;
+    });
+    el.innerHTML=html;
+  });
+}
+function deleteEssential(id){
+  if(!db||!id)return;
+  db.ref('medistudy_essentials/'+id).remove().then(()=>loadAdminEssentials());
 }
 
 // ═══════════════ MCQ SYSTEM ═══════════════
