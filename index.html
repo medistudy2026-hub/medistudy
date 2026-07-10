@@ -657,6 +657,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 <div class="page" id="page-leaderboard">
   <div class="sec-title">🏆 <em>Leaderboard</em></div><div class="sec-sub">Top performers — updated automatically</div>
   <div class="lb-entry-card"><h3>🧠 Top 20 — MCQ Marks</h3>
+    <div id="lb-course-locked-label" style="font-size:12px;color:var(--muted);display:none;"></div>
     <select id="lb-course-sel" class="lb-input" style="margin-bottom:6px;" onchange="renderQuizLB()"><option value="">— Select Course —</option></select>
   </div>
   <div class="lb-list" id="lb-quiz-list"></div>
@@ -1344,7 +1345,7 @@ function goPage(id,addToHistory=true){
   document.getElementById('page-'+id).classList.add('active');
   const map={home:0,search:1,tutor:2,material:3,videos:4,saved:5,planner:6,leaderboard:7,quicknotes:8,progress:9,chat:10,quiz:11,about:12,essentials:13};
   if(map[id]!==undefined)document.querySelectorAll('.nav-tab')[map[id]].classList.add('active');
-  if(id==='material'){if(!wasBackNav)smView={level:'courses'};renderMaterial();}
+  if(id==='material'){if(!wasBackNav){const lc=getStudentCourseId();smView=lc?{level:'subjects',courseId:lc}:{level:'courses'};}renderMaterial();}
   if(id==='videos')renderVideosPage();
   if(id==='saved')renderSaved();
   if(id==='planner')renderPlanner();
@@ -1359,6 +1360,8 @@ function goPage(id,addToHistory=true){
 }
 // Change the view WITHIN Study Material (course/subject/folder drill-down) and track it in history
 function goMaterialView(view){
+  const lc=getStudentCourseId();
+  if(lc && view.level==='courses'){ view={level:'subjects',courseId:lc}; }
   smView=view;
   try{ history.pushState({msPage:'material',smView:view},'',location.pathname+location.search); }catch(e){}
   renderMaterial();
@@ -1969,6 +1972,11 @@ function removeSavedVideo(id){savedVideos=savedVideos.filter(v=>v.id!==id);saveS
 // ═══════════════ STUDY MATERIAL ═══════════════
 let smView={level:'courses'};
 function courseIcon(i){return COURSE_ICONS[i%COURSE_ICONS.length];}
+// If the student has picked their course in Profile, content is locked to just that course — like batch selection in Physics Wallah/Unacademy
+function getStudentCourseId(){
+  if(!userProfile||!userProfile.course)return null;
+  return courses.find(c=>c.id===userProfile.course)?userProfile.course:null;
+}
 
 function renderMaterial(){
   const c=document.getElementById('material-container');
@@ -1990,7 +1998,9 @@ function renderCoursesList(c){
 function renderSubjectsList(c){
   const co=courses.find(x=>x.id===smView.courseId),coIdx=courses.indexOf(co);
   const subs=subjects.filter(s=>s.courseId===smView.courseId);
-  c.innerHTML=`<div class="breadcrumb"><span class="bc-link" onclick="goMaterialView({level:'courses'})">📚 Material</span><span class="bc-sep">›</span><span class="bc-cur">${courseIcon(coIdx)} ${co?co.name:''}</span></div>
+  const lc=getStudentCourseId();
+  const rootCrumb=lc?`<span class="bc-cur">${courseIcon(coIdx)} ${co?co.name:''}</span>`:`<span class="bc-link" onclick="goMaterialView({level:'courses'})">📚 Material</span><span class="bc-sep">›</span><span class="bc-cur">${courseIcon(coIdx)} ${co?co.name:''}</span>`;
+  c.innerHTML=`<div class="breadcrumb">${rootCrumb}</div>
   <div class="folders-grid">${subs.length?subs.map(s=>{
     const fc=folders.filter(f=>f.subjectId===s.id).length,nc=notes.filter(n=>n.subjectId===s.id).length,vc=videos.filter(v=>v.subjectId===s.id).length;
     return`<div class="folder-card" onclick="goMaterialView({level:'folders',courseId:'${smView.courseId}',subjectId:'${s.id}'})">
@@ -2128,12 +2138,18 @@ function renderNotesList(c){
 // ═══════════════ VIDEOS PAGE ═══════════════
 function renderVideosPage(){
   const tabs=document.getElementById('vid-page-tabs');
+  const lc=getStudentCourseId();
+  if(lc){
+    tabs.innerHTML='';
+    filterVP(lc,null);
+    return;
+  }
   tabs.innerHTML=`<button class="vpt active" onclick="filterVP('all',this)">All (${videos.length})</button>`
     +courses.filter(co=>videos.some(v=>v.courseId===co.id)).map(co=>`<button class="vpt" onclick="filterVP('${co.id}',this)">${co.name} (${videos.filter(v=>v.courseId===co.id).length})</button>`).join('');
   filterVP('all',tabs.querySelector('.vpt'));
 }
 function filterVP(cId,el){
-  document.querySelectorAll('.vpt').forEach(t=>t.classList.remove('active'));el.classList.add('active');
+  document.querySelectorAll('.vpt').forEach(t=>t.classList.remove('active'));if(el)el.classList.add('active');
   const filtered=cId==='all'?videos:videos.filter(v=>v.courseId===cId);
   const list=document.getElementById('videos-list');
   if(!filtered.length){list.innerHTML='<div class="empty-state">📭 No videos yet.</div>';return;}
@@ -2172,7 +2188,21 @@ function renderLB(){
 }
 function populateLBCourseSelect(){
   const sel=document.getElementById('lb-course-sel');
+  const label=document.getElementById('lb-course-locked-label');
   if(!sel)return;
+  const lc=getStudentCourseId();
+  if(lc){
+    // Locked to the student's own course — same as Study Material/Videos/MCQ
+    sel.style.display='none';
+    if(label){
+      const co=courses.find(c=>c.id===lc);
+      label.style.display='block';
+      label.textContent='📌 Showing rankings for your course: '+(co?co.name:'');
+    }
+    return;
+  }
+  sel.style.display='';
+  if(label)label.style.display='none';
   const prev=sel.value;
   sel.innerHTML='<option value="">— Select Course —</option>'+courses.map(c=>`<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('');
   if(prev && courses.find(c=>c.id===prev)) sel.value=prev;
@@ -2181,8 +2211,9 @@ function populateLBCourseSelect(){
 function renderQuizLB(){
   const list=document.getElementById('lb-quiz-list');
   if(!list)return;
+  const lc=getStudentCourseId();
   const sel=document.getElementById('lb-course-sel');
-  const courseId=sel?sel.value:'';
+  const courseId=lc||(sel?sel.value:'');
   if(!courseId){list.innerHTML='<div class="empty-state">📭 Select a course to see rankings.</div>';return;}
   if(!db){list.innerHTML='<div class="empty-state">📭 Not connected.</div>';return;}
   db.ref('medistudy_quiz_lb/'+courseId).once('value').then(snap=>{
@@ -2824,7 +2855,7 @@ function updateProfileUI(){
   const courseDis = document.getElementById('profile-course-display');
   const avatarBig = document.getElementById('profile-avatar-big');
   if(nameDis) nameDis.textContent = userProfile.name || 'Set your name';
-  if(courseDis) courseDis.textContent = userProfile.course || 'Tap Edit to set up your profile';
+  if(courseDis) courseDis.textContent = (courses.find(c=>c.id===userProfile.course)||{}).name || 'Tap Edit to set up your profile';
   if(avatarBig) avatarBig.textContent = userProfile.name ? initials : '👤';
 }
 
@@ -2841,7 +2872,9 @@ function showProfileView(){
 }
 function showProfileEdit(){
   document.getElementById('profile-name-inp').value = userProfile.name;
-  document.getElementById('profile-course-inp').value = userProfile.course;
+  const courseSel=document.getElementById('profile-course-inp');
+  courseSel.innerHTML='<option value="">Select your course...</option>'+courses.map(c=>`<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('');
+  courseSel.value = courses.find(c=>c.id===userProfile.course) ? userProfile.course : '';
   document.getElementById('profile-gender-inp').value = userProfile.gender||'';
   document.getElementById('profile-age-inp').value = userProfile.age||'';
   document.getElementById('profile-loggedout-view').style.display='none';
@@ -2849,6 +2882,7 @@ function showProfileEdit(){
   document.getElementById('profile-edit-form').style.display='block';
 }
 function saveProfile(){
+  const prevCourse=userProfile.course;
   userProfile.name = document.getElementById('profile-name-inp').value.trim();
   userProfile.course = document.getElementById('profile-course-inp').value;
   userProfile.gender = document.getElementById('profile-gender-inp').value;
@@ -2858,6 +2892,14 @@ function saveProfile(){
   syncToFirebase('profile', userProfile);
   updateProfileUI();
   showProfileView();
+  // If the course changed, refresh any course-locked pages so the switch takes effect immediately
+  if(prevCourse!==userProfile.course){
+    const lc=getStudentCourseId();
+    smView = lc?{level:'subjects',courseId:lc}:{level:'courses'};
+    if(document.getElementById('page-material').classList.contains('active'))renderMaterial();
+    if(document.getElementById('page-videos').classList.contains('active'))renderVideosPage();
+    if(document.getElementById('page-quiz').classList.contains('active'))showQuizHome();
+  }
   // Pre-fill batch chat name
   if(userProfile.name && !chatUserName){
     chatUserName = userProfile.name;
@@ -3037,7 +3079,7 @@ function updateAuthUI(){
     if(avatarBtn) avatarBtn.textContent=initials;
     if(avatarBig) avatarBig.textContent=initials;
     if(nameDis) nameDis.textContent=displayName||'Welcome!';
-    if(courseDis) courseDis.textContent=userProfile.course||'Set your course below';
+    if(courseDis) courseDis.textContent=(courses.find(c=>c.id===userProfile.course)||{}).name||'Set your course below';
     if(authEmailEl) authEmailEl.textContent='📧 '+currentUser.email;
     if(loggedOutView) loggedOutView.style.display='none';
     if(loggedInView) loggedInView.style.display='block';
@@ -3483,16 +3525,19 @@ function showQuizHome(){
   document.getElementById('quiz-result').style.display='none';
   if(!db){document.getElementById('quiz-sets-list').innerHTML='<div style="color:var(--muted);text-align:center;padding:30px;">Requires internet connection.</div>';return;}
   document.getElementById('quiz-sets-list').innerHTML='<div style="color:var(--muted);text-align:center;padding:20px;">Loading...</div>';
+  const lc=getStudentCourseId();
   db.ref('medistudy_mcq').orderByChild('ts').once('value',snap=>{
     if(!snap||!snap.exists()){
       document.getElementById('quiz-sets-list').style.display='none';
       document.getElementById('quiz-empty').style.display='block';
       return;
     }
-    document.getElementById('quiz-empty').style.display='none';
     let html='';
+    let count=0;
     snap.forEach(c=>{
       const m=c.val();
+      if(lc && m.courseId!==lc)return;
+      count++;
       html=`<div class="card" style="margin-bottom:10px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;" onclick="startQuiz('${m.id}')">
         <div>
           <div style="font-weight:700;font-size:14px;">📝 ${escapeHTML(m.subject)}</div>
@@ -3501,6 +3546,13 @@ function showQuizHome(){
         <div style="font-size:20px;">→</div>
       </div>`+html;
     });
+    if(!count){
+      document.getElementById('quiz-sets-list').style.display='none';
+      document.getElementById('quiz-empty').style.display='block';
+      return;
+    }
+    document.getElementById('quiz-empty').style.display='none';
+    document.getElementById('quiz-sets-list').style.display='block';
     document.getElementById('quiz-sets-list').innerHTML=html;
   });
 }
