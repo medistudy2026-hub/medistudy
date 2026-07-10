@@ -621,6 +621,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
   </div>
   <div class="study-log" style="margin-bottom:14px;">
     <h3>⏱️ Log Today's Study Hours</h3>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Time spent inside the app is now added automatically. Use this only to add extra hours studied offline (books, lectures, etc.)</div>
     <div class="log-form"><label>Hours:</label><input class="log-hrs" type="number" id="log-hrs" min="0" max="24" step="0.5" value="1"><button class="log-btn" onclick="logHours()">+ Log</button></div>
     <div id="week-log"></div>
   </div>
@@ -4458,22 +4459,40 @@ function trimChatMessages(){
 }
 
 
-// Track time on app when user leaves
-document.addEventListener('visibilitychange', () => {
-  if(document.hidden) {
-    totalActiveTime += Date.now() - activeStart;
-    const minutes = Math.round(totalActiveTime / 60000);
-    if(minutes > 0) {
-      gtag('event', 'time_spent', {
-        event_category: 'Engagement',
-        event_label: 'minutes',
-        value: minutes
-      });
-    }
-  } else {
-    activeStart = Date.now();
+// Track time on app when user leaves — logs to Google Analytics AND auto-adds to today's study hours
+function flushActiveTime(){
+  const now = Date.now();
+  const elapsed = now - activeStart;
+  activeStart = now;
+  if(elapsed<=0) return;
+  totalActiveTime += elapsed;
+  const minutes = Math.round(totalActiveTime / 60000);
+  if(minutes > 0 && typeof gtag !== 'undefined') {
+    gtag('event', 'time_spent', {
+      event_category: 'Engagement',
+      event_label: 'minutes',
+      value: minutes
+    });
   }
+  // Auto-add this chunk of active app time to today's study hours (ignore tiny sub-minute blips)
+  const hrs = elapsed/3600000;
+  if(hrs >= (1/60)){
+    const k=todayKey();
+    weekLog[k]=Math.round(((weekLog[k]||0)+hrs)*100)/100;
+    localStorage.setItem('ms_weeklog',JSON.stringify(weekLog));
+    if(currentUser && db){
+      syncToFirebase('weeklog',weekLog);
+      updateHoursLB();
+    }
+    if(document.getElementById('page-planner')&&document.getElementById('page-planner').classList.contains('active'))renderPlanner();
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden) flushActiveTime();
+  else activeStart = Date.now();
 });
+// Safety net for mobile browsers/PWAs that close without a clean visibilitychange
+window.addEventListener('pagehide', flushActiveTime);
 
 // Track session start
 gtag('event', 'session_start', {
