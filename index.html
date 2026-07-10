@@ -655,16 +655,13 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 </div>
 <!-- LEADERBOARD -->
 <div class="page" id="page-leaderboard">
-  <div class="sec-title">🏆 <em>Leaderboard</em></div><div class="sec-sub">Who's studying the hardest?</div>
-  <div class="lb-info-box"><strong>Score</strong> = (Study Hours × 10) + (Topics Done × 5) + (Quiz Score × 1)</div>
-  <div class="lb-entry-card"><h3>📊 Enter Your Stats</h3><div class="lb-form">
-    <input class="lb-input" type="text" id="lb-name" placeholder="Your name">
-    <input class="lb-input" type="number" id="lb-hours" placeholder="Study hours today" min="0" max="24">
-    <input class="lb-input" type="number" id="lb-topics" placeholder="Topics completed today" min="0">
-    <input class="lb-input" type="number" id="lb-quiz" placeholder="Quiz score (0-100)" min="0" max="100">
-    <button class="lb-submit" onclick="submitLB()">Submit My Score 🏆</button>
-  </div></div>
-  <div class="lb-list" id="lb-list"></div>
+  <div class="sec-title">🏆 <em>Leaderboard</em></div><div class="sec-sub">Top performers — updated automatically</div>
+  <div class="lb-entry-card"><h3>🧠 Top 20 — MCQ Marks</h3>
+    <select id="lb-course-sel" class="lb-input" style="margin-bottom:6px;" onchange="renderQuizLB()"><option value="">— Select Course —</option></select>
+  </div>
+  <div class="lb-list" id="lb-quiz-list"></div>
+  <div class="lb-entry-card" style="margin-top:20px;"><h3>⏱️ Top 20 — Study Hours</h3></div>
+  <div class="lb-list" id="lb-hours-list"></div>
 </div>
 <!-- ABOUT -->
 <div class="page" id="page-about">
@@ -1166,7 +1163,6 @@ let videos   = JSON.parse(localStorage.getItem('ms4_videos')   || '[]');
 let exams    = JSON.parse(localStorage.getItem('ms_exams')     || '[]');
 let goals    = JSON.parse(localStorage.getItem('ms_goals')     || '[]');
 let weekLog  = JSON.parse(localStorage.getItem('ms_weeklog')   || '{}');
-let lbData   = JSON.parse(localStorage.getItem('ms_lb')        || '[]');
 let savedNotes  = JSON.parse(localStorage.getItem('ms4_saved')   || '[]');
 let savedVideos = JSON.parse(localStorage.getItem('ms4_savedvids') || '[]');
 let fbConfig = JSON.parse(localStorage.getItem('ms4_fbconfig') || 'null');
@@ -2152,7 +2148,7 @@ function filterVP(cId,el){
 
 // ═══════════════ PLANNER ═══════════════
 function todayKey(){return new Date().toISOString().slice(0,10);}
-function logHours(){const h=parseFloat(document.getElementById('log-hrs').value)||0,k=todayKey();weekLog[k]=(weekLog[k]||0)+h;localStorage.setItem('ms_weeklog',JSON.stringify(weekLog));syncToFirebase('weeklog',weekLog);renderPlanner();}
+function logHours(){const h=parseFloat(document.getElementById('log-hrs').value)||0,k=todayKey();weekLog[k]=(weekLog[k]||0)+h;localStorage.setItem('ms_weeklog',JSON.stringify(weekLog));syncToFirebase('weeklog',weekLog);updateHoursLB();renderPlanner();}
 function addExam(){const n=document.getElementById('exam-name').value.trim(),d=document.getElementById('exam-date').value;if(!n||!d){alert('Fill exam name and date!');return;}exams.push({name:n,date:d});localStorage.setItem('ms_exams',JSON.stringify(exams));syncToFirebase('exams',exams);document.getElementById('exam-name').value='';document.getElementById('exam-date').value='';renderPlanner();}
 function delExam(i){exams.splice(i,1);localStorage.setItem('ms_exams',JSON.stringify(exams));syncToFirebase('exams',exams);renderPlanner();}
 function addGoal(){const t=document.getElementById('goal-input').value.trim();if(!t)return;goals.push({text:t,done:false,date:todayKey()});localStorage.setItem('ms_goals',JSON.stringify(goals));syncToFirebase('goals',goals);document.getElementById('goal-input').value='';renderPlanner();}
@@ -2168,38 +2164,53 @@ function renderPlanner(){
   document.getElementById('goals-list').innerHTML=todayGoals.length?todayGoals.map(g=>{const idx=goals.indexOf(g);return`<div class="goal-item"><div class="goal-cb ${g.done?'done':''}" onclick="toggleGoal(${idx})">${g.done?'✓':''}</div><span class="goal-text ${g.done?'done':''}">${g.text}</span><button class="goal-del" onclick="delGoal(${idx})">🗑️</button></div>`;}).join(''):'<div style="font-size:13px;color:var(--muted);padding:10px 0">No goals for today. Add one above!</div>';
 }
 
-// ═══════════════ LEADERBOARD ═══════════════
-function submitLB(){
-  const name=document.getElementById('lb-name').value.trim();if(!name){alert('Enter your name!');return;}
-  const hours=parseFloat(document.getElementById('lb-hours').value)||0,topics=parseInt(document.getElementById('lb-topics').value)||0,quiz=parseInt(document.getElementById('lb-quiz').value)||0;
-  const score=(hours*10)+(topics*5)+quiz;
-  const entry={name,hours,topics,quiz,score,date:todayKey()};
-  const idx=lbData.findIndex(e=>e.name.toLowerCase()===name.toLowerCase());
-  if(idx>=0)lbData[idx]=entry;else lbData.push(entry);
-  localStorage.setItem('ms_lb',JSON.stringify(lbData));
-  // Push to Firebase so all batchmates see it live!
-  if(fbConnected&&db){
-    const safeKey=name.replace(/[.#$\[\]/]/g,'_');
-    db.ref('medistudy_lb/'+safeKey).set(entry).catch(e=>console.warn('LB push failed:',e));
-  }
-  ['lb-name','lb-hours','lb-topics','lb-quiz'].forEach(id=>document.getElementById(id).value='');
-  renderLB();
-}
+// ═══════════════ LEADERBOARD (fully automatic — MCQ marks + study hours) ═══════════════
 function renderLB(){
-  if(fbConnected&&db){
-    db.ref('medistudy_lb').once('value').then(snap=>{
-      const d=snap.val();
-      if(d){ lbData=Object.values(d); localStorage.setItem('ms_lb',JSON.stringify(lbData)); }
-      _drawLB();
-    }).catch(()=>_drawLB());
-  } else { _drawLB(); }
+  populateLBCourseSelect();
+  renderQuizLB();
+  renderHoursLB();
 }
-function _drawLB(){
-  const sorted=[...lbData].sort((a,b)=>b.score-a.score);
-  const list=document.getElementById('lb-list');
-  if(!sorted.length){list.innerHTML='<div class="empty-state">📭 No entries yet. Be the first!</div>';return;}
-  const medals=['🥇','🥈','🥉'],cls=['gold','silver','bronze'];
-  list.innerHTML=sorted.map((e,i)=>`<div class="lb-item"><div class="lb-rank ${cls[i]||''}">${i<3?medals[i]:i+1}</div><div class="lb-info2"><div class="lb-name">${e.name}</div><div class="lb-score-row"><span class="lb-badge">⏱ ${e.hours}h</span><span class="lb-badge">📚 ${e.topics}</span><span class="lb-badge">📝 ${e.quiz}/100</span></div></div><div class="lb-total">${e.score}</div></div>`).join('');
+function populateLBCourseSelect(){
+  const sel=document.getElementById('lb-course-sel');
+  if(!sel)return;
+  const prev=sel.value;
+  sel.innerHTML='<option value="">— Select Course —</option>'+courses.map(c=>`<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('');
+  if(prev && courses.find(c=>c.id===prev)) sel.value=prev;
+  else if(courses.length) sel.value=courses[0].id;
+}
+function renderQuizLB(){
+  const list=document.getElementById('lb-quiz-list');
+  if(!list)return;
+  const sel=document.getElementById('lb-course-sel');
+  const courseId=sel?sel.value:'';
+  if(!courseId){list.innerHTML='<div class="empty-state">📭 Select a course to see rankings.</div>';return;}
+  if(!db){list.innerHTML='<div class="empty-state">📭 Not connected.</div>';return;}
+  db.ref('medistudy_quiz_lb/'+courseId).once('value').then(snap=>{
+    const d=snap.val();
+    if(!d){list.innerHTML='<div class="empty-state">📭 No quiz scores yet for this course. Be the first!</div>';return;}
+    const arr=Object.values(d).sort((a,b)=>b.best-a.best).slice(0,20);
+    const medals=['🥇','🥈','🥉'],cls=['gold','silver','bronze'];
+    list.innerHTML=arr.map((e,i)=>`<div class="lb-item"><div class="lb-rank ${cls[i]||''}">${i<3?medals[i]:i+1}</div><div class="lb-info2"><div class="lb-name">${escapeHTML(e.name)}</div><div class="lb-score-row"><span class="lb-badge">📝 Best: ${e.best}%</span></div></div><div class="lb-total">${e.best}</div></div>`).join('');
+  }).catch(()=>{list.innerHTML='<div class="empty-state">📭 Could not load rankings.</div>';});
+}
+function renderHoursLB(){
+  const list=document.getElementById('lb-hours-list');
+  if(!list)return;
+  if(!db){list.innerHTML='<div class="empty-state">📭 Not connected.</div>';return;}
+  db.ref('medistudy_hours_lb').once('value').then(snap=>{
+    const d=snap.val();
+    if(!d){list.innerHTML='<div class="empty-state">📭 No study hours logged yet. Be the first!</div>';return;}
+    const arr=Object.values(d).sort((a,b)=>b.totalHours-a.totalHours).slice(0,20);
+    const medals=['🥇','🥈','🥉'],cls=['gold','silver','bronze'];
+    list.innerHTML=arr.map((e,i)=>`<div class="lb-item"><div class="lb-rank ${cls[i]||''}">${i<3?medals[i]:i+1}</div><div class="lb-info2"><div class="lb-name">${escapeHTML(e.name)}</div><div class="lb-score-row"><span class="lb-badge">⏱ ${e.totalHours}h total</span></div></div><div class="lb-total">${e.totalHours}</div></div>`).join('');
+  }).catch(()=>{list.innerHTML='<div class="empty-state">📭 Could not load rankings.</div>';});
+}
+// Push this student's total study hours to the public leaderboard — called automatically whenever hours are logged
+function updateHoursLB(){
+  if(!currentUser||!db)return;
+  const total=Object.values(weekLog).reduce((a,b)=>a+(parseFloat(b)||0),0);
+  const name=(userProfile&&userProfile.name)||currentUser.displayName||(currentUser.email?currentUser.email.split('@')[0]:'Student');
+  db.ref('medistudy_hours_lb/'+currentUser.uid).set({name,totalHours:Math.round(total*10)/10,ts:Date.now()}).catch(e=>console.warn('Hours LB sync failed:',e));
 }
 
 // ═══════════════ ADMIN ═══════════════
@@ -2447,9 +2458,6 @@ window.addEventListener('load', function(){
   initNotifUI();
   renderQNotes();
   updateProfileUI();
-  // Pre-fill LB name from profile
-  const lbName = document.getElementById('lb-name');
-  if(lbName && userProfile.name) lbName.value = userProfile.name;
   if(!navigator.onLine) showOfflineToast('📡 You are offline — saved content still works!',false);
 });
 
@@ -2850,9 +2858,6 @@ function saveProfile(){
   syncToFirebase('profile', userProfile);
   updateProfileUI();
   showProfileView();
-  // Pre-fill leaderboard name
-  const lbName = document.getElementById('lb-name');
-  if(lbName && !lbName.value) lbName.value = userProfile.name;
   // Pre-fill batch chat name
   if(userProfile.name && !chatUserName){
     chatUserName = userProfile.name;
@@ -3581,6 +3586,17 @@ function showQuizResult(){
   document.getElementById('quiz-result-msg').textContent=msg;
   if(typeof gtag !== 'undefined'){
     gtag('event','quiz_completed',{event_category:'Quiz', event_label: currentQuizSet?currentQuizSet.title:'', value: pct});
+  }
+  // Save this student's best score to the automatic course leaderboard
+  if(currentUser&&db&&currentQuizSet&&currentQuizSet.courseId){
+    const lbRef=db.ref('medistudy_quiz_lb/'+currentQuizSet.courseId+'/'+currentUser.uid);
+    lbRef.once('value').then(snap=>{
+      const existing=snap.val();
+      if(!existing||pct>existing.best){
+        const name=(userProfile&&userProfile.name)||currentUser.displayName||(currentUser.email?currentUser.email.split('@')[0]:'Student');
+        lbRef.set({name,best:pct,ts:Date.now()}).catch(e=>console.warn('Quiz LB sync failed:',e));
+      }
+    }).catch(e=>console.warn('Quiz LB read failed:',e));
   }
 }
 
