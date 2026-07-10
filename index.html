@@ -3722,6 +3722,35 @@ window.openPDF = function(note) {
   });
 };
 
+// Track how long each note stays open — lets Ankit see which notes/sections get the most reading time
+let _noteOpenTs = null, _noteOpenMeta = null;
+const openPDFForTiming = window.openPDF;
+window.openPDF = function(note) {
+  openPDFForTiming(note);
+  _noteOpenTs = Date.now();
+  const ctx = getMaterialContext();
+  _noteOpenMeta = { title: note.topic, course: ctx.course, subject: ctx.subject };
+};
+function _flushNoteTime(){
+  if(!_noteOpenTs)return;
+  const seconds = Math.round((Date.now()-_noteOpenTs)/1000);
+  if(seconds>=2){ // ignore accidental instant taps
+    gtag('event','note_time_spent',{
+      event_category:'Study Material',
+      event_label: _noteOpenMeta?_noteOpenMeta.title:'',
+      course: _noteOpenMeta?_noteOpenMeta.course:'',
+      subject: _noteOpenMeta?_noteOpenMeta.subject:'',
+      value: seconds
+    });
+  }
+  _noteOpenTs=null;_noteOpenMeta=null;
+}
+const originalClosePDF = closePDF;
+window.closePDF = function(){
+  _flushNoteTime();
+  originalClosePDF();
+};
+
 // Track note saves
 const originalToggleSave = toggleSaveNote;
 window.toggleSaveNote = function(note) {
@@ -4464,6 +4493,7 @@ function flushActiveTime(){
   const now = Date.now();
   const elapsed = now - activeStart;
   activeStart = now;
+  if(typeof _flushNoteTime==='function')_flushNoteTime();
   if(elapsed<=0) return;
   totalActiveTime += elapsed;
   const minutes = Math.round(totalActiveTime / 60000);
