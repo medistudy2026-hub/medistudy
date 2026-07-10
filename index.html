@@ -945,6 +945,8 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
         <div id="admin-folders-list"></div>
         <div class="add-inline"><input type="text" id="new-folder-name" placeholder="e.g. Short Notes, Diagrams"><button onclick="addFolder()">+ Add</button></div>
         <div class="success-msg" id="struct-success">✅ Saved!</div>
+        <button class="submit-btn" onclick="pushToFirebase('struct-push-success')" style="background:var(--green);color:#052e16;margin-top:14px;">⬆️ Save & Push to Firebase</button>
+        <div class="success-msg" id="struct-push-success">✅ Pushed! Everyone can now see this.</div>
       </div>
       <!-- NOTE -->
       <div class="aform" id="aform-notes">
@@ -956,6 +958,8 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
         <div class="form-group"><label>GOOGLE DRIVE LINK</label><input type="url" id="note-link" placeholder="https://drive.google.com/..."></div>
         <button class="submit-btn" onclick="addNote()">➕ Add Note</button>
         <div class="success-msg" id="note-success">✅ Note added!</div>
+        <button class="submit-btn" onclick="pushToFirebase('note-push-success')" style="background:var(--green);color:#052e16;margin-top:14px;">⬆️ Save & Push to Firebase</button>
+        <div class="success-msg" id="note-push-success">✅ Pushed! Everyone can now see this.</div>
       </div>
       <!-- VIDEO -->
       <div class="aform" id="aform-videos">
@@ -966,11 +970,15 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
         <div class="form-group"><label>YOUTUBE LINK</label><input type="url" id="vid-link" placeholder="https://youtube.com/watch?v=..."></div>
         <button class="submit-btn" onclick="addVideo()">➕ Add Video</button>
         <div class="success-msg" id="vid-success">✅ Video added!</div>
+        <button class="submit-btn" onclick="pushToFirebase('vid-push-success')" style="background:var(--green);color:#052e16;margin-top:14px;">⬆️ Save & Push to Firebase</button>
+        <div class="success-msg" id="vid-push-success">✅ Pushed! Everyone can now see this.</div>
       </div>
       <!-- MANAGE -->
       <div class="aform" id="aform-manage">
         <div class="section-label">Notes</div><div class="manage-list" id="manage-notes"></div>
         <div class="section-label">Videos</div><div class="manage-list" id="manage-videos"></div>
+        <button class="submit-btn" onclick="pushToFirebase('manage-push-success')" style="background:var(--green);color:#052e16;margin-top:14px;">⬆️ Save & Push to Firebase</button>
+        <div class="success-msg" id="manage-push-success">✅ Pushed! Everyone can now see this.</div>
       </div>
       <!-- ANNOUNCE -->
       <div class="aform" id="aform-announce">
@@ -1266,10 +1274,10 @@ function initFirebase(cb){
     updateFBStatus();updateHomeBanner();
   });
 }
-function pushToFirebase(){
+function pushToFirebase(successId){
   if(!fbConnected||!db){alert('Connect Firebase first!');return;}
   db.ref('medistudy').set({courses,subjects,folders,notes,videos,updatedAt:Date.now()})
-    .then(()=>flashSuccess('fb-success','✅ Pushed! Friends can now pull.'))
+    .then(()=>flashSuccess(successId||'fb-success','✅ Pushed! Friends can now pull.'))
     .catch(e=>alert('Push failed: '+e.message));
 }
 function pullFromFirebase(){
