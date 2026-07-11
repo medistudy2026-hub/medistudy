@@ -1286,14 +1286,24 @@ function initFirebase(cb){
     updateFBStatus();updateHomeBanner();
   });
 }
-function pushToFirebase(successId){
-  if(!fbConnected||!db){alert('Connect Firebase first!');return;}
+function pushToFirebase(successId,_retries){
+  _retries = _retries||0;
+  if(!fbConnected||!db){
+    if(_retries<10){ setTimeout(()=>pushToFirebase(successId,_retries+1), 500); return; }
+    alert('Still connecting to the server. Please check your internet connection and try again in a few seconds.');
+    return;
+  }
   db.ref('medistudy').set({courses,subjects,folders,notes,videos,updatedAt:Date.now()})
     .then(()=>flashSuccess(successId||'fb-success','✅ Pushed! Friends can now pull.'))
     .catch(e=>alert('Push failed: '+e.message));
 }
-function pullFromFirebase(){
-  if(!fbConnected||!db){alert('Connect Firebase first!');return;}
+function pullFromFirebase(_retries){
+  _retries = _retries||0;
+  if(!fbConnected||!db){
+    if(_retries<10){ setTimeout(()=>pullFromFirebase(_retries+1), 500); return; }
+    alert('Still connecting to the server. Please check your internet connection and try again in a few seconds.');
+    return;
+  }
   db.ref('medistudy').once('value').then(snap=>{
     const d=snap.val();if(!d){alert('No data on Firebase yet.');return;}
     courses=d.courses||courses;subjects=d.subjects||subjects;folders=d.folders||folders;notes=d.notes||notes;videos=d.videos||videos;
