@@ -682,11 +682,25 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
     <div class="pwa-manual-steps" id="pwa-manual-steps"></div>
   </div>
 
-  <div class="about-story">
-    <h3>Why I built MediStudy</h3>
-    <p>Hi! I'm Ankit Lal Sahu, a 2nd year MBBS student at Ulyanovsk State University in Russia. I built MediStudy to make studying easier for myself and my classmates — AI explanations, organized notes, and lecture videos all in one clean app.</p>
-    <p>If it helps even one student understand a topic better before an exam — it was worth building. 🩺</p>
+  <div class="ess-card">
+    <div class="ess-title" onclick="toggleAcc('about-why')"><span>💡 Why I built MediStudy</span><span class="ess-arrow" id="arrow-about-why">▾</span></div>
+    <div class="ess-content" id="about-why" style="display:none;">
+      <p>Hi! I'm Ankit Lal Sahu, a 2nd year MBBS student at Ulyanovsk State University in Russia. I built MediStudy to make studying easier for myself and my classmates — AI explanations, organized notes, and lecture videos all in one clean app.</p>
+      <p>If it helps even one student understand a topic better before an exam — it was worth building. 🩺</p>
+    </div>
   </div>
+  <div class="ess-card">
+    <div class="ess-title" onclick="toggleAcc('about-privacy')"><span>🔒 Your Data & Privacy</span><span class="ess-arrow" id="arrow-about-privacy">▾</span></div>
+    <div class="ess-content" id="about-privacy" style="display:none;">
+      <p style="margin-bottom:10px;">Here's exactly what MediStudy collects, and why:</p>
+      <p><strong>When you sign in:</strong> your name and email, via Google or Email sign-up.</p>
+      <p><strong>In your profile:</strong> your name, course, and optionally your gender & age — used to personalize your experience and show you the right course's content.</p>
+      <p><strong>Study activity:</strong> your quiz scores, study hours (tracked automatically while the app is open), saved notes, and Batch Chat messages — used for the Leaderboard and to keep your progress synced across your devices.</p>
+      <p><strong>Who can see it:</strong> Only I (the developer) can see registered students' name, email, and course. Other students only ever see your name on the Leaderboard and in Batch Chat — never your email or profile details.</p>
+      <p style="margin-top:8px;">This app has no ads, and your data is never sold or shared with anyone outside MediStudy.</p>
+    </div>
+  </div>
+  <!-- Add future About sections here the same way, e.g. "📱 App Features" or "❓ How to Use" — just copy one of the .ess-card blocks above -->
   <div class="contact-card">
     <div class="contact-info"><h4>Connect with me</h4><p>@ankitsahu_58_ on Instagram</p></div>
     <a class="insta-btn" href="https://instagram.com/ankitsahu_58_" target="_blank">📸 Instagram</a>
@@ -3223,6 +3237,14 @@ function toggleEss(i){
   c.style.display=open?'none':'block';
   if(a)a.textContent=open?'▾':'▴';
 }
+// Generic dropdown toggle — used by About page sections (Why I built this, Data & Privacy, and future ones)
+function toggleAcc(id){
+  const c=document.getElementById(id),a=document.getElementById('arrow-'+id);
+  if(!c)return;
+  const open=c.style.display!=='none';
+  c.style.display=open?'none':'block';
+  if(a)a.textContent=open?'▾':'▴';
+}
 // ── Admin/Sponsor: add, list, delete essentials ──
 function addEssential(){
   if(!db){alert('Firebase not connected.');return;}
@@ -3735,12 +3757,13 @@ function _flushNoteTime(){
   if(!_noteOpenTs)return;
   const seconds = Math.round((Date.now()-_noteOpenTs)/1000);
   if(seconds>=2){ // ignore accidental instant taps
+    const minutes = Math.round((seconds/60)*10)/10; // e.g. 2.5 minutes, rounded to 1 decimal
     gtag('event','note_time_spent',{
       event_category:'Study Material',
       event_label: _noteOpenMeta?_noteOpenMeta.title:'',
       course: _noteOpenMeta?_noteOpenMeta.course:'',
       subject: _noteOpenMeta?_noteOpenMeta.subject:'',
-      value: seconds
+      value: minutes
     });
   }
   _noteOpenTs=null;_noteOpenMeta=null;
