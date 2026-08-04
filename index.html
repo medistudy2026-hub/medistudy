@@ -143,6 +143,9 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 .note-meta{font-size:11px;color:var(--muted);}
 .note-actions{display:flex;gap:6px;flex-shrink:0;}
 .note-btn{padding:5px 10px;border-radius:7px;font-size:11px;font-weight:600;background:var(--surface);border:1px solid var(--border);color:var(--muted);cursor:pointer;text-decoration:none;transition:all .2s;white-space:nowrap;display:inline-flex;align-items:center;gap:3px;}
+.like-btn{padding:5px 9px;border-radius:7px;font-size:11px;font-weight:600;background:var(--surface);border:1px solid var(--border);color:var(--muted);cursor:pointer;transition:all .2s;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;}
+.like-btn.liked{color:#e85d38;border-color:#e85d38;}
+.like-btn .like-count{font-variant-numeric:tabular-nums;}
 .note-btn:hover{background:var(--accent);color:#0e0f13;border-color:var(--accent);}
 .note-btn.saved{background:#0e3a1c;border-color:var(--green);color:var(--green);}
 .note-btn.save-btn:hover{background:#0e3a1c;border-color:var(--green);color:var(--green);}
@@ -1423,6 +1426,7 @@ function goPage(id,addToHistory=true){
   document.getElementById('page-'+id).classList.add('active');
   const map={home:0,search:1,tutor:2,material:3,videos:4,saved:5,planner:6,leaderboard:7,quicknotes:8,progress:9,chat:10,quiz:11,about:12,essentials:13};
   if(map[id]!==undefined)document.querySelectorAll('.nav-tab')[map[id]].classList.add('active');
+  if(id!=='material') detachLikeListeners();
   if(id==='material'){if(!wasBackNav){const lc=getStudentCourseId();smView=lc?{level:'subjects',courseId:lc}:{level:'courses'};}renderMaterial();}
   if(id==='videos')renderVideosPage();
   if(id==='saved')renderSaved();
@@ -2015,6 +2019,42 @@ function _tryDownloadAndCacheBlob(noteId, fileId, onOk, onFail){
 }
 function isNoteSaved(id){return savedNotes.some(s=>s.id===id);}
 
+// ═══════════════ NOTE LIKES (❤️) ═══════════════
+let _likeRefs=[];
+function detachLikeListeners(){
+  _likeRefs.forEach(r=>r.off());
+  _likeRefs=[];
+}
+function attachLikeListeners(noteIds){
+  detachLikeListeners();
+  if(!db) return;
+  noteIds.forEach(id=>{
+    const ref=db.ref('medistudy_likes/'+id);
+    ref.on('value', snap=>{
+      const data=snap.val()||{};
+      const count=Object.keys(data).length;
+      const likedByMe=!!(currentUser && data[currentUser.uid]);
+      const btn=document.getElementById('likebtn-'+id);
+      const cEl=document.getElementById('likecount-'+id);
+      if(cEl) cEl.textContent=count;
+      if(btn){
+        btn.classList.toggle('liked', likedByMe);
+        btn.firstChild.textContent = likedByMe ? '❤️ ' : '🤍 ';
+      }
+    });
+    _likeRefs.push(ref);
+  });
+}
+function toggleLikeNote(noteId){
+  if(!currentUser){ alert('Please sign in to like notes!'); return; }
+  if(!db){ alert('Not connected yet — please check your internet and try again.'); return; }
+  const ref=db.ref('medistudy_likes/'+noteId+'/'+currentUser.uid);
+  ref.once('value').then(snap=>{
+    if(snap.exists()) ref.remove();
+    else ref.set(true);
+  });
+}
+
 // ═══════════════ SAVED PAGE ═══════════════
 function renderSaved(){
   const c=document.getElementById('saved-container');
@@ -2058,9 +2098,9 @@ function getStudentCourseId(){
 
 function renderMaterial(){
   const c=document.getElementById('material-container');
-  if(smView.level==='courses')renderCoursesList(c);
-  else if(smView.level==='subjects'){smView._subjTab=null;renderSubjectsList(c);}
-  else if(smView.level==='folders')renderFoldersList(c, smView._subjTab);
+  if(smView.level==='courses'){detachLikeListeners();renderCoursesList(c);}
+  else if(smView.level==='subjects'){detachLikeListeners();smView._subjTab=null;renderSubjectsList(c);}
+  else if(smView.level==='folders'){detachLikeListeners();renderFoldersList(c, smView._subjTab);}
   else renderNotesList(c);
 }
 
@@ -2174,6 +2214,7 @@ function renderNotesList(c){
   const folName=isVid?'Videos':(fo?fo.name:'Notes');
   let inner='';
   if(isVid){
+    detachLikeListeners();
     const vids=videos.filter(v=>v.subjectId===smView.subjectId);
     inner=vids.length?`<div class="videos-list">${vids.map(v=>`<div class="video-card">
       <div class="video-thumb"><span class="yt-icon">▶️</span><span class="v-subject">${su?su.name.toUpperCase():''}</span></div>
@@ -2188,6 +2229,7 @@ function renderNotesList(c){
       return`<div class="note-card" id="nc-${n.id}"><div class="note-icon">📄</div>
         <div class="note-info"><div class="note-title">${n.topic}</div><div class="note-meta">${n.desc||'Study Notes'}${saved?' · 💾':''}</div></div>
         <div class="note-actions">
+          <button class="like-btn" id="likebtn-${n.id}" onclick='toggleLikeNote("${n.id}")'>🤍 <span class="like-count" id="likecount-${n.id}">0</span></button>
           <button class="note-btn" onclick='openPDF(${safe})'>Open 📂</button>
           <button class="note-btn ${saved?'saved':''}" id="savebtn-${n.id}" onclick='toggleSaveNote(${safe});renderMaterial()'>${saved?'✅':'💾'}</button>
         </div></div>`;
@@ -2205,6 +2247,7 @@ function renderNotesList(c){
         }
       },0);
     }
+    attachLikeListeners(nts.map(n=>n.id));
   }
   c.innerHTML=`<div class="breadcrumb">
     <span class="bc-link" onclick="goMaterialView({level:'courses'})">📚 Material</span><span class="bc-sep">›</span>
