@@ -146,6 +146,12 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 .like-btn{padding:5px 9px;border-radius:7px;font-size:11px;font-weight:600;background:var(--surface);border:1px solid var(--border);color:var(--muted);cursor:pointer;transition:all .2s;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;}
 .like-btn.liked{color:#e85d38;border-color:#e85d38;}
 .like-btn .like-count{font-variant-numeric:tabular-nums;}
+.bm-filter-row{display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-bottom:10px;cursor:pointer;font-size:13px;font-weight:600;}
+.bm-switch{width:38px;height:22px;border-radius:20px;background:var(--surface);border:1px solid var(--border);position:relative;transition:all .2s;flex-shrink:0;}
+.bm-switch.on{background:var(--accent);border-color:var(--accent);}
+.bm-knob{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .2s;}
+.bm-switch.on .bm-knob{left:18px;}
+.bm-btn.on{color:var(--accent);border-color:var(--accent);}
 .note-btn:hover{background:var(--accent);color:#0e0f13;border-color:var(--accent);}
 .note-btn.saved{background:#0e3a1c;border-color:var(--green);color:var(--green);}
 .note-btn.save-btn:hover{background:#0e3a1c;border-color:var(--green);color:var(--green);}
@@ -619,7 +625,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 </div>
 <!-- SAVED NOTES -->
 <div class="page" id="page-saved">
-  <div class="sec-title">💾 <em>Saved</em></div><div class="sec-sub">Your offline saved notes & videos</div>
+  <div class="sec-title">💾 <em>Saved</em></div><div class="sec-sub">Your offline saved & bookmarked notes</div>
   <div id="saved-container"></div>
 </div>
 <!-- PLANNER -->
@@ -681,7 +687,18 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
     <div class="about-avatar" id="about-avatar-display">👨‍⚕️</div>
     <div class="about-name" id="about-name-display" onclick="secretTap()" style="cursor:default;user-select:none;">Ankit Lal Sahu</div>
     <div class="about-role">MBBS Student · Ulyanovsk State University · Russia</div>
-    <div class="about-badges"><span class="badge">🎓 2nd Year MBBS</span><span class="badge">🇷🇺 Ulyanovsk</span><span class="badge">💻 App Developer</span></div>
+    <div class="about-badges"><span class="badge">🎓 3rd Year MBBS</span><span class="badge">🇷🇺 Ulyanovsk</span><span class="badge">💻 App Developer</span></div>
+    <div style="margin-top:16px;font-size:12px;color:var(--muted);line-height:1.8;">
+      Thanks to <strong style="color:var(--text);">Alish Yadav (3rd Course)</strong> for helping upload notes!
+    </div>
+    <div style="height:1px;background:var(--border);margin:14px auto;width:60%;"></div>
+    <div style="font-size:12px;color:var(--muted);line-height:1.8;">
+      Join our WhatsApp group to discuss and stay updated:<br>
+      📱 <a href="https://chat.whatsapp.com/LY6qxBSHbAV044EQVYIjJD" target="_blank" style="color:var(--accent);text-decoration:none;">2nd Course</a>
+      &nbsp;·&nbsp;
+      📱 <a href="https://chat.whatsapp.com/LOl2WTBpHO6H94AKsKYyaM" target="_blank" style="color:var(--accent);text-decoration:none;">3rd Course</a><br>
+      — managed by <strong style="color:var(--text);">Hariom Kumar (3rd Course)</strong>
+    </div>
   </div>
 
   <!-- PWA Install Card -->
@@ -695,7 +712,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
   <div class="ess-card">
     <div class="ess-title" onclick="toggleAcc('about-why')"><span>💡 Why I built MediStudy</span><span class="ess-arrow" id="arrow-about-why">▾</span></div>
     <div class="ess-content" id="about-why" style="display:none;">
-      <p>Hi! I'm Ankit Lal Sahu, a 2nd year MBBS student at Ulyanovsk State University in Russia. I built MediStudy to make studying easier for myself and my classmates — AI explanations, organized notes, and lecture videos all in one clean app.</p>
+      <p>Hi! I'm Ankit Lal Sahu, a 3rd year MBBS student at Ulyanovsk State University in Russia. I built MediStudy to make studying easier for myself and my classmates — AI explanations, organized notes, and lecture videos all in one clean app.</p>
       <p>If it helps even one student understand a topic better before an exam — it was worth building. 🩺</p>
     </div>
   </div>
@@ -1237,6 +1254,8 @@ let goals    = JSON.parse(localStorage.getItem('ms_goals')     || '[]');
 let weekLog  = JSON.parse(localStorage.getItem('ms_weeklog')   || '{}');
 let savedNotes  = JSON.parse(localStorage.getItem('ms4_saved')   || '[]');
 let savedVideos = JSON.parse(localStorage.getItem('ms4_savedvids') || '[]');
+let bookmarkedNotes = JSON.parse(localStorage.getItem('ms4_bookmarks') || '[]');
+let showBookmarkedOnly = false;
 let fbConfig = JSON.parse(localStorage.getItem('ms4_fbconfig') || 'null');
 let fbConnected=false, db=null, adminUnlocked=false;
 let chatHistory=[], chatLoading=false, currentPDF=null;
@@ -1263,6 +1282,8 @@ function saveLocal(){
 }
 function saveSaved(){localStorage.setItem('ms4_saved',JSON.stringify(savedNotes));syncToFirebase('saved',savedNotes);}
 function saveSavedVideos(){localStorage.setItem('ms4_savedvids',JSON.stringify(savedVideos));syncToFirebase('savedvids',savedVideos);}
+function saveBookmarks(){localStorage.setItem('ms4_bookmarks',JSON.stringify(bookmarkedNotes));syncToFirebase('bookmarks',bookmarkedNotes);}
+function isNoteBookmarked(id){return bookmarkedNotes.some(b=>b.id===id);}
 function isVideoSaved(id){return savedVideos.some(s=>s.id===id);}
 function toggleSaveVideo(video){
   const idx=savedVideos.findIndex(s=>s.id===video.id);
@@ -1445,6 +1466,7 @@ function goMaterialView(view){
   const lc=getStudentCourseId();
   if(lc && view.level==='courses'){ view={level:'subjects',courseId:lc}; }
   smView=view;
+  showBookmarkedOnly=false;
   try{ history.pushState({msPage:'material',smView:view},'',location.pathname+location.search); }catch(e){}
   renderMaterial();
   saveLastScreen('material');
@@ -2013,6 +2035,18 @@ function toggleSaveNote(note){
   saveSaved();
   if(document.getElementById('page-saved').classList.contains('active')) renderSaved();
 }
+function toggleBookmarkFilter(){
+  showBookmarkedOnly=!showBookmarkedOnly;
+  renderMaterial();
+}
+function toggleBookmarkNote(note){
+  const idx=bookmarkedNotes.findIndex(b=>b.id===note.id);
+  if(idx>=0) bookmarkedNotes.splice(idx,1);
+  else bookmarkedNotes.push({...note, bookmarkedAt:Date.now()});
+  saveBookmarks();
+  renderMaterial();
+  if(document.getElementById('page-saved')?.classList.contains('active')) renderSaved();
+}
 function _tryDownloadAndCacheBlob(noteId, fileId, onOk, onFail){
   const url=`https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`;
   savePdfBlob(noteId, url).then(ok=>{ if(ok) onOk(); else onFail(); });
@@ -2058,11 +2092,21 @@ function toggleLikeNote(noteId){
 // ═══════════════ SAVED PAGE ═══════════════
 function renderSaved(){
   const c=document.getElementById('saved-container');
-  if(!savedNotes.length && !savedVideos.length){
-    c.innerHTML='<div class="saved-empty"><div class="big-icon">💾</div><h3>Nothing saved yet</h3><p>Open any note or video and tap <strong>💾</strong> to save it for offline access.</p></div>';
+  if(!savedNotes.length && !savedVideos.length && !bookmarkedNotes.length){
+    c.innerHTML='<div class="saved-empty"><div class="big-icon">💾</div><h3>Nothing saved yet</h3><p>Open any note or video and tap <strong>💾</strong> to save it for offline access, or <strong>📑</strong> to bookmark it.</p></div>';
     return;
   }
   let html='';
+  // Bookmarked notes section
+  if(bookmarkedNotes.length){
+    html+=`<div class="saved-section-title">🔖 Bookmarked Notes (${bookmarkedNotes.length})</div>`;
+    html+=bookmarkedNotes.map(n=>{
+      const co=courses.find(x=>x.id===n.courseId),su=subjects.find(x=>x.id===n.subjectId),fo=folders.find(x=>x.id===n.folderId);
+      const path=[co&&co.name,su&&su.name,fo&&fo.name].filter(Boolean).join(' › ');
+      const safe=JSON.stringify(n).replace(/"/g,'&quot;');
+      return`<div class="saved-note-card"><div class="note-icon">📄</div><div class="note-info"><div class="saved-badge">🔖 BOOKMARK</div><div class="note-title">${n.topic}</div><div class="note-meta">${path} · ${new Date(n.bookmarkedAt).toLocaleDateString()}</div></div><div class="note-actions"><button class="note-btn" onclick='openPDF(${safe})'>Open 📂</button><button class="note-btn" style="color:var(--accent2);border-color:var(--accent2)" onclick="removeBookmark('${n.id}')">✕</button></div></div>`;
+    }).join('');
+  }
   // Notes section
   if(savedNotes.length){
     html+=`<div class="saved-section-title">📄 Saved Notes (${savedNotes.length})</div>`;
@@ -2085,6 +2129,7 @@ function renderSaved(){
   c.innerHTML=html;
 }
 function removeSaved(id){savedNotes=savedNotes.filter(s=>s.id!==id);saveSaved();renderSaved();}
+function removeBookmark(id){bookmarkedNotes=bookmarkedNotes.filter(b=>b.id!==id);saveBookmarks();renderSaved();if(document.getElementById('page-material').classList.contains('active'))renderMaterial();}
 function removeSavedVideo(id){savedVideos=savedVideos.filter(v=>v.id!==id);saveSavedVideos();renderSaved();}
 
 // ═══════════════ STUDY MATERIAL ═══════════════
@@ -2222,18 +2267,25 @@ function renderNotesList(c){
       <div style="display:flex;gap:6px;flex-shrink:0;"><button class="watch-btn" onclick="openVideo(this)" data-link="${v.link}" data-title="${v.title}">Watch ▶</button><button class="note-btn ${isVideoSaved(v.id)?'saved':''}" style="padding:6px 8px;" onclick="toggleSaveVideo(${JSON.stringify(v).replace(/"/g,'&quot;')});renderMaterial()">${isVideoSaved(v.id)?'✅':'💾'}</button></div></div></div>`).join('')}</div>`
       :'<div class="empty-state">📭 No videos here yet.</div>';
   } else {
-    const nts=notes.filter(n=>n.folderId===smView.folderId);
-    inner=nts.length?`<div class="notes-list">${nts.map(n=>{
+    const allNts=notes.filter(n=>n.folderId===smView.folderId);
+    const nts=showBookmarkedOnly?allNts.filter(n=>isNoteBookmarked(n.id)):allNts;
+    const bmToggle=`<div class="bm-filter-row" onclick="toggleBookmarkFilter()">
+      <span>🔖 Bookmarked only</span>
+      <span class="bm-switch ${showBookmarkedOnly?'on':''}"><span class="bm-knob"></span></span>
+    </div>`;
+    inner=bmToggle+(nts.length?`<div class="notes-list">${nts.map(n=>{
       const saved=isNoteSaved(n.id);
+      const bookmarked=isNoteBookmarked(n.id);
       const safe=JSON.stringify(n).replace(/"/g,'&quot;');
       return`<div class="note-card" id="nc-${n.id}"><div class="note-icon">📄</div>
         <div class="note-info"><div class="note-title">${n.topic}</div><div class="note-meta">${n.desc||'Study Notes'}${saved?' · 💾':''}</div></div>
         <div class="note-actions">
+          <button class="note-btn bm-btn ${bookmarked?'on':''}" onclick='toggleBookmarkNote(${safe})'>${bookmarked?'🔖':'📑'}</button>
           <button class="like-btn" id="likebtn-${n.id}" onclick='toggleLikeNote("${n.id}")'>🤍 <span class="like-count" id="likecount-${n.id}">0</span></button>
           <button class="note-btn" onclick='openPDF(${safe})'>Open 📂</button>
           <button class="note-btn ${saved?'saved':''}" id="savebtn-${n.id}" onclick='toggleSaveNote(${safe});renderMaterial()'>${saved?'✅':'💾'}</button>
         </div></div>`;
-    }).join('')}</div>`:'<div class="empty-state">📭 No notes here yet.<br>Add via Admin → Note!</div>';
+    }).join('')}</div>`:(showBookmarkedOnly?'<div class="empty-state">🔖 No bookmarked notes here yet.<br>Tap 📑 on any note to save it here.</div>':'<div class="empty-state">📭 No notes here yet.<br>Add via Admin → Note!</div>'));
     // After render: async update ✅/📥 status for saved notes
     const savedNtIds=nts.filter(n=>isNoteSaved(n.id)).map(n=>n.id);
     if(savedNtIds.length){
@@ -3120,6 +3172,10 @@ function loadUserDataFromFirebase(){
     if(d.savedvids){
       savedVideos = d.savedvids;
       localStorage.setItem('ms4_savedvids', JSON.stringify(savedVideos));
+    }
+    if(d.bookmarks){
+      bookmarkedNotes = d.bookmarks;
+      localStorage.setItem('ms4_bookmarks', JSON.stringify(bookmarkedNotes));
     }
     // Refresh UI with synced data
     if(document.getElementById('page-planner').classList.contains('active')) renderPlanner();
