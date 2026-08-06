@@ -636,9 +636,8 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
     <div class="planner-stat"><div class="ps-val" id="ps-goals">0/0</div><div class="ps-label">GOALS DONE</div></div>
   </div>
   <div class="study-log" style="margin-bottom:14px;">
-    <h3>⏱️ Log Today's Study Hours</h3>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Time spent inside the app is now added automatically. Use this only to add extra hours studied offline (books, lectures, etc.)</div>
-    <div class="log-form"><label>Hours:</label><input class="log-hrs" type="number" id="log-hrs" min="0" max="24" step="0.5" value="1"><button class="log-btn" onclick="logHours()">+ Log</button></div>
+    <h3>⏱️ This Week's Study Hours</h3>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Time spent inside the app is tracked automatically.</div>
     <div id="week-log"></div>
   </div>
   <div class="exam-card">
@@ -673,12 +672,12 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 <!-- LEADERBOARD -->
 <div class="page" id="page-leaderboard">
   <div class="sec-title">🏆 <em>Leaderboard</em></div><div class="sec-sub">Top performers — updated automatically</div>
-  <div class="lb-entry-card"><h3>🧠 Top 10 — MCQ Marks</h3>
+  <div class="lb-entry-card"><h3>🧠 Top 20 — MCQ Marks</h3>
     <div id="lb-course-locked-label" style="font-size:12px;color:var(--muted);display:none;"></div>
     <select id="lb-course-sel" class="lb-input" style="margin-bottom:6px;" onchange="renderQuizLB()"><option value="">— Select Course —</option></select>
   </div>
   <div class="lb-list" id="lb-quiz-list"></div>
-  <div class="lb-entry-card" style="margin-top:20px;"><h3>⏱️ Top 10 — Study Hours</h3></div>
+  <div class="lb-entry-card" style="margin-top:20px;"><h3>⏱️ Top 20 — Study Hours</h3></div>
   <div class="lb-list" id="lb-hours-list"></div>
 </div>
 <!-- ABOUT -->
@@ -2392,7 +2391,7 @@ function renderQuizLB(){
   db.ref('medistudy_quiz_lb/'+courseId).once('value').then(snap=>{
     const d=snap.val();
     if(!d){list.innerHTML='<div class="empty-state">📭 No quiz scores yet for this course. Be the first!</div>';return;}
-    const arr=Object.values(d).sort((a,b)=>b.best-a.best).slice(0,10);
+    const arr=Object.values(d).sort((a,b)=>b.best-a.best).slice(0,20);
     const medals=['🥇','🥈','🥉'],cls=['gold','silver','bronze'];
     list.innerHTML=arr.map((e,i)=>`<div class="lb-item"><div class="lb-rank ${cls[i]||''}">${i<3?medals[i]:i+1}</div><div class="lb-info2"><div class="lb-name">${escapeHTML(e.name)}</div><div class="lb-score-row"><span class="lb-badge">📝 Best: ${e.best}%</span></div></div><div class="lb-total">${e.best}</div></div>`).join('');
   }).catch(()=>{list.innerHTML='<div class="empty-state">📭 Could not load rankings.</div>';});
@@ -2404,7 +2403,7 @@ function renderHoursLB(){
   db.ref('medistudy_hours_lb').once('value').then(snap=>{
     const d=snap.val();
     if(!d){list.innerHTML='<div class="empty-state">📭 No study hours logged yet. Be the first!</div>';return;}
-    const arr=Object.values(d).sort((a,b)=>b.totalHours-a.totalHours).slice(0,10);
+    const arr=Object.values(d).sort((a,b)=>b.totalHours-a.totalHours).slice(0,20);
     const medals=['🥇','🥈','🥉'],cls=['gold','silver','bronze'];
     list.innerHTML=arr.map((e,i)=>`<div class="lb-item"><div class="lb-rank ${cls[i]||''}">${i<3?medals[i]:i+1}</div><div class="lb-info2"><div class="lb-name">${escapeHTML(e.name)}</div><div class="lb-score-row"><span class="lb-badge">⏱ ${e.totalHours}h total</span></div></div><div class="lb-total">${e.totalHours}</div></div>`).join('');
   }).catch(()=>{list.innerHTML='<div class="empty-state">📭 Could not load rankings.</div>';});
