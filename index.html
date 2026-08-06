@@ -438,7 +438,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 .pwa-install-btn{padding:8px 16px;background:var(--accent);color:#0e0f13;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-size:12px;white-space:nowrap;font-family:var(--sans);}
 .pwa-dismiss-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:4px;}
 
-.batch-msg-reactions{display:flex;flex-wrap:wrap;gap:5px;margin-top:-7px;margin-bottom:3px;align-items:center;position:relative;z-index:1;}
+.batch-msg-reactions{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px;align-items:center;}
 .react-add-btn{width:22px;height:22px;border-radius:50%;background:var(--card);border:1px solid var(--border);color:var(--muted);font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
 .react-add-btn:hover{background:var(--border);color:var(--text);}
 .react-chip{display:inline-flex;align-items:center;gap:3px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:2px 8px;font-size:12px;cursor:pointer;line-height:1.4;}
@@ -673,12 +673,12 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 <!-- LEADERBOARD -->
 <div class="page" id="page-leaderboard">
   <div class="sec-title">🏆 <em>Leaderboard</em></div><div class="sec-sub">Top performers — updated automatically</div>
-  <div class="lb-entry-card"><h3>🧠 Top 20 — MCQ Marks</h3>
+  <div class="lb-entry-card"><h3>🧠 Top 10 — MCQ Marks</h3>
     <div id="lb-course-locked-label" style="font-size:12px;color:var(--muted);display:none;"></div>
     <select id="lb-course-sel" class="lb-input" style="margin-bottom:6px;" onchange="renderQuizLB()"><option value="">— Select Course —</option></select>
   </div>
   <div class="lb-list" id="lb-quiz-list"></div>
-  <div class="lb-entry-card" style="margin-top:20px;"><h3>⏱️ Top 20 — Study Hours</h3></div>
+  <div class="lb-entry-card" style="margin-top:20px;"><h3>⏱️ Top 10 — Study Hours</h3></div>
   <div class="lb-list" id="lb-hours-list"></div>
 </div>
 <!-- ABOUT -->
@@ -2392,7 +2392,7 @@ function renderQuizLB(){
   db.ref('medistudy_quiz_lb/'+courseId).once('value').then(snap=>{
     const d=snap.val();
     if(!d){list.innerHTML='<div class="empty-state">📭 No quiz scores yet for this course. Be the first!</div>';return;}
-    const arr=Object.values(d).sort((a,b)=>b.best-a.best).slice(0,20);
+    const arr=Object.values(d).sort((a,b)=>b.best-a.best).slice(0,10);
     const medals=['🥇','🥈','🥉'],cls=['gold','silver','bronze'];
     list.innerHTML=arr.map((e,i)=>`<div class="lb-item"><div class="lb-rank ${cls[i]||''}">${i<3?medals[i]:i+1}</div><div class="lb-info2"><div class="lb-name">${escapeHTML(e.name)}</div><div class="lb-score-row"><span class="lb-badge">📝 Best: ${e.best}%</span></div></div><div class="lb-total">${e.best}</div></div>`).join('');
   }).catch(()=>{list.innerHTML='<div class="empty-state">📭 Could not load rankings.</div>';});
@@ -2404,7 +2404,7 @@ function renderHoursLB(){
   db.ref('medistudy_hours_lb').once('value').then(snap=>{
     const d=snap.val();
     if(!d){list.innerHTML='<div class="empty-state">📭 No study hours logged yet. Be the first!</div>';return;}
-    const arr=Object.values(d).sort((a,b)=>b.totalHours-a.totalHours).slice(0,20);
+    const arr=Object.values(d).sort((a,b)=>b.totalHours-a.totalHours).slice(0,10);
     const medals=['🥇','🥈','🥉'],cls=['gold','silver','bronze'];
     list.innerHTML=arr.map((e,i)=>`<div class="lb-item"><div class="lb-rank ${cls[i]||''}">${i<3?medals[i]:i+1}</div><div class="lb-info2"><div class="lb-name">${escapeHTML(e.name)}</div><div class="lb-score-row"><span class="lb-badge">⏱ ${e.totalHours}h total</span></div></div><div class="lb-total">${e.totalHours}</div></div>`).join('');
   }).catch(()=>{list.innerHTML='<div class="empty-state">📭 Could not load rankings.</div>';});
@@ -4539,10 +4539,10 @@ function startBatchChatListener(){
       return`<div class="batch-msg ${mine?'mine':'theirs'}" data-key="${k}">
         <div class="batch-msg-name">${mine?'You':escapeHTML(m.name||'')}</div>
         <div class="batch-msg-bubble">${escapeHTML(m.text||'')}</div>
+        <div class="batch-msg-time">${time}</div>
         <div class="batch-msg-reactions" id="rxn-${k}">
           <button class="react-add-btn" onclick="openEmojiPicker(event,'${k}')" title="React">+</button>
         </div>
-        <div class="batch-msg-time">${time}</div>
       </div>`;
     }).join('');
     if(wasAtBottom) msgEl.scrollTop=msgEl.scrollHeight;
@@ -4625,20 +4625,9 @@ function selectReaction(msgKey,emoji){
   closeEmojiPicker();
   if(!db||!fbConnected){showOfflineToast('📡 No connection',false);return;}
   const uKey=reactUserKey();
-  const baseRef=db.ref('medistudy_chat_reactions/'+msgKey);
-  baseRef.once('value',snap=>{
-    const data=snap.val()||{};
-    const updates={};
-    let alreadyThisEmoji=false;
-    REACTION_EMOJIS.forEach(e=>{
-      const users=data[e];
-      if(users&&users[uKey]){
-        if(e===emoji)alreadyThisEmoji=true;
-        updates[e+'/'+uKey]=null; // clear this student's existing reaction(s) on this message
-      }
-    });
-    if(!alreadyThisEmoji)updates[emoji+'/'+uKey]=true; // apply the newly picked one, unless it was a re-tap (unreact)
-    baseRef.update(updates);
+  const ref=db.ref('medistudy_chat_reactions/'+msgKey+'/'+emoji+'/'+uKey);
+  ref.once('value',snap=>{
+    if(snap.exists())ref.remove();else ref.set(true);
   });
 }
 
