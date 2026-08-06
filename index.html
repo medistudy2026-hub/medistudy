@@ -636,8 +636,9 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
     <div class="planner-stat"><div class="ps-val" id="ps-goals">0/0</div><div class="ps-label">GOALS DONE</div></div>
   </div>
   <div class="study-log" style="margin-bottom:14px;">
-    <h3>⏱️ This Week's Study Hours</h3>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Time spent inside the app is tracked automatically.</div>
+    <h3>⏱️ Log Today's Study Hours</h3>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Time spent inside the app is now added automatically. Use this only to add extra hours studied offline (books, lectures, etc.)</div>
+    <div class="log-form"><label>Hours:</label><input class="log-hrs" type="number" id="log-hrs" min="0" max="24" step="0.5" value="1"><button class="log-btn" onclick="logHours()">+ Log</button></div>
     <div id="week-log"></div>
   </div>
   <div class="exam-card">
@@ -4348,13 +4349,15 @@ function saveProgress(){localStorage.setItem('ms_progress',JSON.stringify(progDa
 function renderProgress(){
   const container=document.getElementById('prog-container');
   const summary=document.getElementById('prog-summary');
-  if(!subjects.length){
+  const lc=getStudentCourseId();
+  const subjectsForProgress=lc?subjects.filter(s=>s.courseId===lc):subjects;
+  if(!subjectsForProgress.length){
     container.innerHTML='<div class="empty-state">📭 No subjects yet. Add via Admin → Structure first!</div>';
     summary.innerHTML='';return;
   }
   // Calculate overall stats
   let totalTopics=0,doneTopics=0;
-  subjects.forEach(s=>{
+  subjectsForProgress.forEach(s=>{
     const d=progData[s.id];
     if(d&&d.topics){totalTopics+=d.topics.length;doneTopics+=d.topics.filter(t=>t.done).length;}
   });
@@ -4363,7 +4366,7 @@ function renderProgress(){
     <div class="prog-stat"><div class="prog-stat-val">${pct}%</div><div class="prog-stat-label">OVERALL</div></div>
     <div class="prog-stat"><div class="prog-stat-val">${doneTopics}</div><div class="prog-stat-label">DONE</div></div>
     <div class="prog-stat"><div class="prog-stat-val">${totalTopics-doneTopics}</div><div class="prog-stat-label">PENDING</div></div>`;
-  container.innerHTML=subjects.map(s=>{
+  container.innerHTML=subjectsForProgress.map(s=>{
     if(!progData[s.id])progData[s.id]={topics:[]};
     const topics=progData[s.id].topics;
     const done=topics.filter(t=>t.done).length;
