@@ -438,7 +438,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 .pwa-install-btn{padding:8px 16px;background:var(--accent);color:#0e0f13;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-size:12px;white-space:nowrap;font-family:var(--sans);}
 .pwa-dismiss-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:4px;}
 
-.batch-msg-reactions{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px;align-items:center;}
+.batch-msg-reactions{display:flex;flex-wrap:wrap;gap:5px;margin-top:-7px;margin-bottom:3px;align-items:center;position:relative;z-index:1;}
 .react-add-btn{width:22px;height:22px;border-radius:50%;background:var(--card);border:1px solid var(--border);color:var(--muted);font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
 .react-add-btn:hover{background:var(--border);color:var(--text);}
 .react-chip{display:inline-flex;align-items:center;gap:3px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:2px 8px;font-size:12px;cursor:pointer;line-height:1.4;}
@@ -1531,7 +1531,7 @@ async function sendMsg(){
       },
       body:JSON.stringify({
         userId: userId,
-        model:'openai/gpt-oss-120b',
+        model:'llama-3.3-70b-versatile',
         messages:[
           {role:'system', content:SYSTEM},
           ...chatHistory
@@ -4539,10 +4539,10 @@ function startBatchChatListener(){
       return`<div class="batch-msg ${mine?'mine':'theirs'}" data-key="${k}">
         <div class="batch-msg-name">${mine?'You':escapeHTML(m.name||'')}</div>
         <div class="batch-msg-bubble">${escapeHTML(m.text||'')}</div>
-        <div class="batch-msg-time">${time}</div>
         <div class="batch-msg-reactions" id="rxn-${k}">
           <button class="react-add-btn" onclick="openEmojiPicker(event,'${k}')" title="React">+</button>
         </div>
+        <div class="batch-msg-time">${time}</div>
       </div>`;
     }).join('');
     if(wasAtBottom) msgEl.scrollTop=msgEl.scrollHeight;
@@ -4625,9 +4625,20 @@ function selectReaction(msgKey,emoji){
   closeEmojiPicker();
   if(!db||!fbConnected){showOfflineToast('📡 No connection',false);return;}
   const uKey=reactUserKey();
-  const ref=db.ref('medistudy_chat_reactions/'+msgKey+'/'+emoji+'/'+uKey);
-  ref.once('value',snap=>{
-    if(snap.exists())ref.remove();else ref.set(true);
+  const baseRef=db.ref('medistudy_chat_reactions/'+msgKey);
+  baseRef.once('value',snap=>{
+    const data=snap.val()||{};
+    const updates={};
+    let alreadyThisEmoji=false;
+    REACTION_EMOJIS.forEach(e=>{
+      const users=data[e];
+      if(users&&users[uKey]){
+        if(e===emoji)alreadyThisEmoji=true;
+        updates[e+'/'+uKey]=null; // clear this student's existing reaction(s) on this message
+      }
+    });
+    if(!alreadyThisEmoji)updates[emoji+'/'+uKey]=true; // apply the newly picked one, unless it was a re-tap (unreact)
+    baseRef.update(updates);
   });
 }
 
