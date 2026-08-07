@@ -883,6 +883,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
     <div class="pdf-progress-bar" id="pdf-progress-bar"></div>
     <button class="pdf-close-btn" onclick="closePDF()">✕ Close</button>
     <span class="pdf-title" id="pdf-title"></span>
+    <button class="pdf-save-bar-btn" id="pdf-refresh-bar-btn" onclick="refreshCurrentPdf()" style="background:var(--card);color:var(--text);border:1px solid var(--border);margin-right:6px;padding:6px 10px;" title="Re-download the latest version">🔄</button>
     <button class="pdf-save-bar-btn" id="pdf-save-bar-btn" onclick="toggleSaveFromViewer()">💾 Save Offline</button>
   </div>
   <div class="pdf-loading" id="pdf-loading" style="display:none;">
@@ -1028,7 +1029,8 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
         <div class="form-group"><label>TOPIC NAME</label><input type="text" id="note-topic" placeholder="e.g. Cardiac Cycle"></div>
         <div class="form-group"><label>DESCRIPTION (optional)</label><textarea id="note-desc" placeholder="Short description..."></textarea></div>
         <div class="form-group"><label>GOOGLE DRIVE LINK</label><input type="url" id="note-link" placeholder="https://drive.google.com/..."></div>
-        <button class="submit-btn" onclick="addNote()">➕ Add Note</button>
+        <button class="submit-btn" id="note-submit-btn" onclick="addNote()">➕ Add Note</button>
+        <button class="submit-btn" id="note-cancel-edit-btn" onclick="cancelEditNote()" style="display:none;background:var(--card);color:var(--text);border:1px solid var(--border);margin-top:8px;">✕ Cancel Edit</button>
         <div class="success-msg" id="note-success">✅ Note added!</div>
         <button class="submit-btn" onclick="pushToFirebase('note-push-success')" style="background:var(--green);color:#052e16;margin-top:14px;">⬆️ Save & Push to Firebase</button>
         <div class="success-msg" id="note-push-success">✅ Pushed! Everyone can now see this.</div>
@@ -1971,6 +1973,47 @@ async function openPDF(note){
   frame.onload=()=>clearTimeout(iframeTimer);
 }
 
+// Force-redownload the current PDF, bypassing the offline cache — used when
+// a note has been re-uploaded/updated and the app is still showing an old cached copy.
+async function refreshCurrentPdf(){
+  if(!currentPDF) return;
+  const note=currentPDF;
+  const btn=document.getElementById('pdf-refresh-bar-btn');
+  if(btn){ btn.disabled=true; btn.textContent='⏳'; }
+
+  await deletePdfBlob(note.id); // clear whatever is cached (Cache API + IndexedDB)
+
+  if(!navigator.onLine){
+    if(btn){ btn.disabled=false; btn.textContent='🔄'; }
+    _pdfShowError('You are offline — can\'t fetch the latest version right now.');
+    return;
+  }
+
+  _pdfShowLoading('Fetching latest version...');
+  _pdfSetProgress(20);
+  pdfJsDoc=null; pdfCurrentPage=1; pdfTotalPages=0; pdfRendering=false;
+
+  const m=note.link.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  const fileId=m?m[1]:null;
+  const drivePreviewUrl=fileId?`https://drive.google.com/file/d/${fileId}/preview`:note.link;
+
+  if(fileId){
+    try{
+      const blob=await _driveDownloadWithConfirm(fileId);
+      if(blob){
+        _pdfShowLoading('Rendering PDF...');
+        await _renderPdfFromBlob(blob);
+        savePdfBlobDirect(note.id, blob).then(()=>updatePDFSaveBtn(note.id));
+        if(btn){ btn.disabled=false; btn.textContent='🔄'; }
+        return;
+      }
+    }catch(e){ console.warn('Refresh download failed, falling back to iframe',e); }
+  }
+  _pdfShowLoading('Loading preview...');
+  _pdfShowFallbackIframe(drivePreviewUrl);
+  if(btn){ btn.disabled=false; btn.textContent='🔄'; }
+}
+
 function closePDF(){
   document.getElementById('pdf-overlay').classList.remove('open');
   // Cleanup
@@ -2608,14 +2651,49 @@ function updateVidSubjects(){
 }
 
 // Add Note
+let editingNoteId=null;
 function addNote(){
   const cId=document.getElementById('note-course').value,sId=document.getElementById('note-subject').value,fId=document.getElementById('note-folder').value;
   const topic=document.getElementById('note-topic').value.trim(),desc=document.getElementById('note-desc').value.trim(),link=document.getElementById('note-link').value.trim();
   if(!topic||!link){alert('Fill Topic and Google Drive link!');return;}
   if(!fId){alert('Create a folder first in Structure → Folders!');return;}
+
+  if(editingNoteId){
+    // UPDATE existing note in place — keeps same id, so likes/bookmarks aren't lost
+    const n=notes.find(x=>x.id===editingNoteId);
+    if(n){ n.courseId=cId; n.subjectId=sId; n.folderId=fId; n.topic=topic; n.desc=desc; n.link=link; }
+    saveLocal();
+    cancelEditNote();
+    flashSuccess('note-success');
+    renderManage();
+    return;
+  }
+
   notes.push({id:uid(),courseId:cId,subjectId:sId,folderId:fId,topic,desc,link});saveLocal();
   ['note-topic','note-desc','note-link'].forEach(id=>document.getElementById(id).value='');
   flashSuccess('note-success');
+}
+function editNote(id){
+  const n=notes.find(x=>x.id===id);
+  if(!n)return;
+  editingNoteId=id;
+  document.getElementById('note-course').value=n.courseId;
+  updateNoteSubjects();
+  document.getElementById('note-subject').value=n.subjectId;
+  updateNoteFolders();
+  document.getElementById('note-folder').value=n.folderId;
+  document.getElementById('note-topic').value=n.topic;
+  document.getElementById('note-desc').value=n.desc||'';
+  document.getElementById('note-link').value=n.link;
+  document.getElementById('note-submit-btn').textContent='💾 Update Note';
+  document.getElementById('note-cancel-edit-btn').style.display='block';
+  document.getElementById('atab-notes').click();
+}
+function cancelEditNote(){
+  editingNoteId=null;
+  ['note-topic','note-desc','note-link'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('note-submit-btn').textContent='➕ Add Note';
+  document.getElementById('note-cancel-edit-btn').style.display='none';
 }
 // Add Video
 function addVideo(){
@@ -2631,7 +2709,7 @@ function addVideo(){
 function renderManage(){
   document.getElementById('manage-notes').innerHTML=notes.length?notes.map(n=>{
     const co=courses.find(c=>c.id===n.courseId),su=subjects.find(s=>s.id===n.subjectId),fo=folders.find(f=>f.id===n.folderId);
-    return`<div class="manage-item"><div><div class="mi-title">${n.topic}</div><div class="mi-sub">${[co&&co.name,su&&su.name,fo&&fo.name].filter(Boolean).join(' › ')}</div></div><button class="del-btn" onclick="delNote('${n.id}')">Delete</button></div>`;
+    return`<div class="manage-item"><div><div class="mi-title">${n.topic}</div><div class="mi-sub">${[co&&co.name,su&&su.name,fo&&fo.name].filter(Boolean).join(' › ')}</div></div><div style="display:flex;gap:6px;"><button class="edit-btn" onclick="editNote('${n.id}')">✏️ Edit</button><button class="del-btn" onclick="delNote('${n.id}')">Delete</button></div></div>`;
   }).join(''):'<div style="font-size:12px;color:var(--muted)">No notes yet.</div>';
   document.getElementById('manage-videos').innerHTML=videos.length?videos.map(v=>{
     const co=courses.find(c=>c.id===v.courseId),su=subjects.find(s=>s.id===v.subjectId);
