@@ -1663,7 +1663,7 @@ let _pdfQualityScale = 2.0;  // global quality scale set on init
 let _pdfVw = 400;            // global viewport width set on init
 let _pdfScrollTimer = null;  // debounce timer for scroll
 
-async function _renderAllPages(){
+async function _renderAllPages(preservePage){
   const container = document.getElementById('pdf-canvas-container');
   container.innerHTML = '';
   _pdfRenderedPages.clear();
@@ -1717,9 +1717,30 @@ async function _renderAllPages(){
   _updateNavBar();
   _pdfSetProgress(100);
 
+  // If re-rendering after a rotation, jump back to where the student was reading
+  if(preservePage && preservePage > 1 && preservePage <= pdfTotalPages){
+    pdfCurrentPage = preservePage;
+    _updateNavBar();
+    const ph = document.getElementById(`pdf-page-${preservePage}`);
+    if(ph) container.scrollTop = ph.offsetTop;
+  }
+
   // STEP 3: Render first visible pages immediately
-  await _lazyRenderAround(1);
+  await _lazyRenderAround(pdfCurrentPage);
 }
+
+// Re-render the open PDF at the new width when the phone is rotated,
+// so pages actually fill the screen instead of staying sized for the old orientation.
+let _pdfOrientationTimer = null;
+window.addEventListener('resize', () => {
+  if(!pdfJsDoc) return; // no PDF currently loaded
+  const overlay = document.getElementById('pdf-overlay');
+  if(!overlay || !overlay.classList.contains('open')) return; // PDF viewer not open
+  clearTimeout(_pdfOrientationTimer);
+  _pdfOrientationTimer = setTimeout(() => {
+    _renderAllPages(pdfCurrentPage);
+  }, 400); // wait for rotation animation to settle before re-measuring width
+});
 
 // Render pages around a given page number, unload far pages
 async function _lazyRenderAround(centerPage){
@@ -2874,7 +2895,6 @@ const manifest = {
   display: 'standalone',
   background_color: '#0e0f13',
   theme_color: '#e8a838',
-  orientation: 'portrait',
   icons: [
     { src: 'https://img.icons8.com/fluency/192/stethoscope.png', sizes: '192x192', type: 'image/png' },
     { src: 'https://img.icons8.com/fluency/512/stethoscope.png', sizes: '512x512', type: 'image/png' }
