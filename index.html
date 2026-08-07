@@ -1621,7 +1621,10 @@ async function _renderPdfFromBlob(blob){
     _pdfSetProgress(30);
     const arrayBuf=await blob.arrayBuffer();
     _pdfSetProgress(60);
-    pdfJsDoc=await pdfjsLib.getDocument({data:arrayBuf}).promise;
+    pdfJsDoc=await pdfjsLib.getDocument({
+      data:arrayBuf,
+      standardFontDataUrl:'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/'
+    }).promise;
     pdfTotalPages=pdfJsDoc.numPages;
     pdfCurrentPage=1;
     _pdfSetProgress(80);
