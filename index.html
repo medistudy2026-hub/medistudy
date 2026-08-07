@@ -727,7 +727,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
     </div>
   </div>
   <div class="ess-card">
-    <div class="ess-title" onclick="toggleAcc('about-feedback')"><span>💬 Feedback & Support</span><span class="ess-arrow" id="arrow-about-feedback">▾</span></div>
+    <div class="ess-title" onclick="toggleAcc('about-feedback');loadMyFeedback();"><span>💬 Feedback & Support</span><span class="ess-arrow" id="arrow-about-feedback">▾</span></div>
     <div class="ess-content" id="about-feedback" style="display:none;">
       <p style="margin-bottom:12px;">Love the app? Found a bug? Want something added? Let me know — I read every submission.</p>
       <div class="form-group"><label>HOW DO YOU LIKE THE APP?</label>
@@ -752,6 +752,10 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
       </div>
       <button class="submit-btn" onclick="submitFeedback()">📨 Send Feedback</button>
       <div class="success-msg" id="fb-success">✅ Thanks! Your feedback has been sent.</div>
+      <div style="margin-top:16px;">
+        <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;">📋 MY FEEDBACK</div>
+        <div id="my-feedback-list" style="font-size:12px;color:var(--muted);">Sign in to see your submitted feedback.</div>
+      </div>
     </div>
   </div>
   <!-- Add future About sections here the same way, e.g. "📱 App Features" or "❓ How to Use" — just copy one of the .ess-card blocks above -->
@@ -1209,6 +1213,12 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
             <option value="Suggestion">💡 Suggestion</option>
             <option value="Praise">❤️ Praise</option>
             <option value="Other">✏️ Other</option>
+          </select>
+          <select id="feedback-status-filter" onchange="renderFeedbackList()" style="padding:6px 10px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;">
+            <option value="">All statuses</option>
+            <option value="New">🔵 New</option>
+            <option value="Seen">🟡 Seen</option>
+            <option value="Resolved">🟢 Resolved</option>
           </select>
           <button onclick="loadFeedbackList()" style="margin-left:auto;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer;">🔄 Refresh</button>
         </div>
@@ -3134,8 +3144,52 @@ function submitFeedback(){
     fbRating=0; fbCategory='';
     document.querySelectorAll('#fb-star-rating .star').forEach(s=>s.classList.remove('on'));
     document.querySelectorAll('#fb-cat-row .fb-cat-btn').forEach(b=>b.classList.remove('on'));
+    loadMyFeedback();
   }).catch(e=>{
     alert('Could not send feedback — please try again. ('+e.message+')');
+  });
+}
+
+// Student's own submitted feedback — newest 50, with status + any reply from admin
+function loadMyFeedback(){
+  const listEl=document.getElementById('my-feedback-list');
+  if(!listEl)return;
+  if(!currentUser){ listEl.innerHTML='Sign in to see your submitted feedback.'; return; }
+  if(!db){ listEl.innerHTML='Not connected yet.'; return; }
+  listEl.innerHTML='Loading...';
+  db.ref('medistudy_feedback').orderByChild('uid').equalTo(currentUser.uid).once('value',snap=>{
+    const data=snap.val()||{};
+    const rows=Object.keys(data).map(key=>{
+      const f=data[key]||{};
+      return {
+        key,
+        rating: f.rating||0,
+        category: f.category||'Other',
+        text: f.text||'',
+        timestamp: f.timestamp||0,
+        status: f.status||'New',
+        reply: f.reply||''
+      };
+    }).sort((a,b)=>b.timestamp-a.timestamp).slice(0,50);
+    if(!rows.length){ listEl.innerHTML='You haven\'t sent any feedback yet.'; return; }
+    listEl.innerHTML=rows.map(f=>{
+      const when=f.timestamp?new Date(f.timestamp).toLocaleDateString():'—';
+      const stars='★'.repeat(f.rating)+'☆'.repeat(5-f.rating);
+      const statusColor=f.status==='New'?'#3b82f6':(f.status==='Seen'?'#eab308':'#22c55e');
+      const statusLabel=f.status==='New'?'🔵 New':(f.status==='Seen'?'🟡 Seen':'🟢 Resolved');
+      return `<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px;flex-wrap:wrap;">
+          <div style="color:var(--accent);font-size:12px;">${stars}</div>
+          <span style="background:${statusColor}22;border:1px solid ${statusColor};color:${statusColor};border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;">${statusLabel}</span>
+        </div>
+        <div style="white-space:pre-wrap;font-size:12px;color:var(--text);margin-bottom:4px;">${escapeHTML(f.text)}</div>
+        <div style="font-size:11px;color:var(--muted);">🕒 ${when}</div>
+        ${f.reply?`<div style="margin-top:8px;padding:8px 10px;background:var(--bg);border-left:3px solid var(--accent);border-radius:6px;font-size:12px;"><strong>Reply:</strong> ${escapeHTML(f.reply)}</div>`:''}
+      </div>`;
+    }).join('');
+  },err=>{
+    listEl.innerHTML='<span style="color:#e85d38;">Could not load your feedback.</span>';
+    console.error(err);
   });
 }
 
@@ -4720,13 +4774,14 @@ function renderStudentsList(){
 // ═══════════════ ADMIN: FEEDBACK LIST ═══════════════
 let _allFeedback=[];
 const FB_CAT_ICON={Bug:'🐞',Suggestion:'💡',Praise:'❤️',Other:'✏️'};
+const FB_STATUS_ICON={New:'🔵 New',Seen:'🟡 Seen',Resolved:'🟢 Resolved'};
 function loadFeedbackList(){
   const listEl=document.getElementById('feedback-list');
   const sumEl=document.getElementById('feedback-summary');
   if(!db||!fbConnected){ listEl.innerHTML='<div style="color:var(--muted);font-size:12px;">Connect Firebase first.</div>'; return; }
   sumEl.textContent='Loading...';
   listEl.innerHTML='';
-  db.ref('medistudy_feedback').once('value',snap=>{
+  db.ref('medistudy_feedback').orderByChild('timestamp').limitToLast(50).once('value',snap=>{
     const data=snap.val()||{};
     _allFeedback=Object.keys(data).map(key=>{
       const f=data[key]||{};
@@ -4737,7 +4792,9 @@ function loadFeedbackList(){
         rating: f.rating||0,
         category: f.category||'Other',
         text: f.text||'',
-        timestamp: f.timestamp||0
+        timestamp: f.timestamp||0,
+        status: f.status||'New',
+        reply: f.reply||''
       };
     }).sort((a,b)=>b.timestamp-a.timestamp);
     renderFeedbackList();
@@ -4751,22 +4808,59 @@ function renderFeedbackList(){
   const listEl=document.getElementById('feedback-list');
   const sumEl=document.getElementById('feedback-summary');
   const catFilter=document.getElementById('feedback-cat-filter').value;
-  const rows=catFilter?_allFeedback.filter(f=>f.category===catFilter):_allFeedback;
+  const statusFilter=document.getElementById('feedback-status-filter').value;
+  let rows=_allFeedback;
+  if(catFilter) rows=rows.filter(f=>f.category===catFilter);
+  if(statusFilter) rows=rows.filter(f=>f.status===statusFilter);
   const avgRating=_allFeedback.length?(_allFeedback.reduce((s,f)=>s+f.rating,0)/_allFeedback.length).toFixed(1):'—';
-  sumEl.textContent=`${rows.length} of ${_allFeedback.length} total · avg rating ${avgRating}★`;
+  const newCount=_allFeedback.filter(f=>f.status==='New').length;
+  sumEl.textContent=`${rows.length} of ${_allFeedback.length} loaded (newest 50) · ${newCount} New · avg rating ${avgRating}★`;
   if(!rows.length){ listEl.innerHTML='<div style="color:var(--muted);font-size:12px;">No feedback found.</div>'; return; }
   listEl.innerHTML=rows.map(f=>{
     const when=f.timestamp?new Date(f.timestamp).toLocaleString():'—';
     const stars='★'.repeat(f.rating)+'☆'.repeat(5-f.rating);
+    const statusColor=f.status==='New'?'#3b82f6':(f.status==='Seen'?'#eab308':'#22c55e');
     return `<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:12px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px;flex-wrap:wrap;">
         <div style="font-weight:700;">${escapeHTML(f.name)} <span style="color:var(--muted);font-weight:400;">· ${escapeHTML(f.course)}</span></div>
-        <div style="color:var(--accent);">${stars}</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="color:var(--accent);">${stars}</div>
+          <select onchange="setFeedbackStatus('${f.key}',this.value)" style="background:${statusColor}22;border:1px solid ${statusColor};color:${statusColor};border-radius:6px;padding:2px 6px;font-size:11px;font-weight:700;">
+            <option value="New" ${f.status==='New'?'selected':''}>🔵 New</option>
+            <option value="Seen" ${f.status==='Seen'?'selected':''}>🟡 Seen</option>
+            <option value="Resolved" ${f.status==='Resolved'?'selected':''}>🟢 Resolved</option>
+          </select>
+        </div>
       </div>
       <div style="color:var(--muted);margin-bottom:4px;">${FB_CAT_ICON[f.category]||'✏️'} ${escapeHTML(f.category)} &nbsp; 🕒 ${when}</div>
-      <div style="white-space:pre-wrap;">${escapeHTML(f.text)}</div>
+      <div style="white-space:pre-wrap;margin-bottom:8px;">${escapeHTML(f.text)}</div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input type="text" id="fb-reply-${f.key}" value="${escapeHTML(f.reply)}" placeholder="Write a reply the student will see (optional)..." style="flex:1;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;">
+        <button onclick="saveFeedbackReply('${f.key}')" style="background:var(--accent);border:none;color:#fff;border-radius:6px;padding:6px 10px;font-size:11px;cursor:pointer;white-space:nowrap;">💾 Save</button>
+      </div>
     </div>`;
   }).join('');
+}
+function setFeedbackStatus(key,status){
+  if(!db)return;
+  db.ref('medistudy_feedback/'+key).update({status}).then(()=>{
+    const f=_allFeedback.find(x=>x.key===key);
+    if(f)f.status=status;
+    renderFeedbackList();
+  }).catch(e=>alert('Could not update status: '+e.message));
+}
+function saveFeedbackReply(key){
+  if(!db)return;
+  const input=document.getElementById('fb-reply-'+key);
+  const reply=input.value.trim();
+  db.ref('medistudy_feedback/'+key).update({reply}).then(()=>{
+    const f=_allFeedback.find(x=>x.key===key);
+    if(f)f.reply=reply;
+    const btn=event.target;
+    const orig=btn.textContent;
+    btn.textContent='✅ Saved';
+    setTimeout(()=>{btn.textContent=orig;},1500);
+  }).catch(e=>alert('Could not save reply: '+e.message));
 }
 
 function trimChatMessages(){
