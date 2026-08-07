@@ -447,6 +447,9 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 .emoji-picker-popup{position:fixed;z-index:2000;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:8px;display:flex;gap:4px;box-shadow:0 8px 24px rgba(0,0,0,.4);}
 .emoji-picker-popup button{background:none;border:none;font-size:22px;cursor:pointer;padding:4px 6px;border-radius:8px;line-height:1;}
 .emoji-picker-popup button:hover{background:var(--border);}
+.note-menu-popup{position:fixed;z-index:2000;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.4);min-width:190px;display:flex;flex-direction:column;}
+.note-menu-popup button{background:none;border:none;color:var(--text);font-size:13px;text-align:left;padding:10px 12px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;}
+.note-menu-popup button:hover{background:var(--card);}
 </style>
 
   <!-- Google Analytics -->
@@ -883,7 +886,6 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
     <div class="pdf-progress-bar" id="pdf-progress-bar"></div>
     <button class="pdf-close-btn" onclick="closePDF()">✕ Close</button>
     <span class="pdf-title" id="pdf-title"></span>
-    <button class="pdf-save-bar-btn" id="pdf-refresh-bar-btn" onclick="refreshCurrentPdf()" style="background:var(--card);color:var(--text);border:1px solid var(--border);margin-right:6px;padding:6px 10px;" title="Re-download the latest version">🔄</button>
     <button class="pdf-save-bar-btn" id="pdf-save-bar-btn" onclick="toggleSaveFromViewer()">💾 Save Offline</button>
   </div>
   <div class="pdf-loading" id="pdf-loading" style="display:none;">
@@ -1973,47 +1975,6 @@ async function openPDF(note){
   frame.onload=()=>clearTimeout(iframeTimer);
 }
 
-// Force-redownload the current PDF, bypassing the offline cache — used when
-// a note has been re-uploaded/updated and the app is still showing an old cached copy.
-async function refreshCurrentPdf(){
-  if(!currentPDF) return;
-  const note=currentPDF;
-  const btn=document.getElementById('pdf-refresh-bar-btn');
-  if(btn){ btn.disabled=true; btn.textContent='⏳'; }
-
-  await deletePdfBlob(note.id); // clear whatever is cached (Cache API + IndexedDB)
-
-  if(!navigator.onLine){
-    if(btn){ btn.disabled=false; btn.textContent='🔄'; }
-    _pdfShowError('You are offline — can\'t fetch the latest version right now.');
-    return;
-  }
-
-  _pdfShowLoading('Fetching latest version...');
-  _pdfSetProgress(20);
-  pdfJsDoc=null; pdfCurrentPage=1; pdfTotalPages=0; pdfRendering=false;
-
-  const m=note.link.match(/\/d\/([a-zA-Z0-9_-]+)/);
-  const fileId=m?m[1]:null;
-  const drivePreviewUrl=fileId?`https://drive.google.com/file/d/${fileId}/preview`:note.link;
-
-  if(fileId){
-    try{
-      const blob=await _driveDownloadWithConfirm(fileId);
-      if(blob){
-        _pdfShowLoading('Rendering PDF...');
-        await _renderPdfFromBlob(blob);
-        savePdfBlobDirect(note.id, blob).then(()=>updatePDFSaveBtn(note.id));
-        if(btn){ btn.disabled=false; btn.textContent='🔄'; }
-        return;
-      }
-    }catch(e){ console.warn('Refresh download failed, falling back to iframe',e); }
-  }
-  _pdfShowLoading('Loading preview...');
-  _pdfShowFallbackIframe(drivePreviewUrl);
-  if(btn){ btn.disabled=false; btn.textContent='🔄'; }
-}
-
 function closePDF(){
   document.getElementById('pdf-overlay').classList.remove('open');
   // Cleanup
@@ -2123,6 +2084,61 @@ function toggleBookmarkNote(note){
   renderMaterial();
   if(document.getElementById('page-saved')?.classList.contains('active')) renderSaved();
 }
+
+// ═══════════════ NOTE CARD ⋮ MENU (Bookmark / Save Offline / Refresh) ═══════════════
+function openNoteMenu(event,note){
+  event.stopPropagation();
+  closeNoteMenu();
+  const btn=event.currentTarget;
+  const rect=btn.getBoundingClientRect();
+  const bookmarked=isNoteBookmarked(note.id);
+  const saved=isNoteSaved(note.id);
+  const pop=document.createElement('div');
+  pop.className='note-menu-popup';
+  pop.id='note-menu-popup';
+  const safe=JSON.stringify(note).replace(/"/g,'&quot;');
+  pop.innerHTML=`
+    <button onclick='closeNoteMenu();toggleBookmarkNote(${safe})'>${bookmarked?'🔖 Remove Bookmark':'📑 Bookmark'}</button>
+    <button onclick='closeNoteMenu();toggleSaveNote(${safe});renderMaterial()'>${saved?'✅ Remove Offline Copy':'💾 Save Offline'}</button>
+    <button onclick='closeNoteMenu();refreshNoteFromList(${safe})'>🔄 Refresh (latest version)</button>
+  `;
+  document.body.appendChild(pop);
+  const pw=pop.offsetWidth||190, ph=pop.offsetHeight||140;
+  let left=rect.right-pw;
+  if(left<8) left=8;
+  if(left+pw>window.innerWidth-8) left=window.innerWidth-pw-8;
+  let top=rect.bottom+6;
+  if(top+ph>window.innerHeight-8) top=rect.top-ph-6;
+  pop.style.left=left+'px';
+  pop.style.top=top+'px';
+  setTimeout(()=>document.addEventListener('click',closeNoteMenu,{once:true}),0);
+}
+function closeNoteMenu(){
+  const pop=document.getElementById('note-menu-popup');
+  if(pop)pop.remove();
+}
+async function refreshNoteFromList(note){
+  showOfflineToast('🔄 Refreshing "'+note.topic+'"...',true);
+  await deletePdfBlob(note.id);
+  if(!navigator.onLine){
+    showOfflineToast('⚠️ You are offline — connect to refresh.',false);
+    return;
+  }
+  const m=note.link.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  const fileId=m?m[1]:null;
+  if(!fileId){ showOfflineToast('⚠️ Could not refresh — invalid link.',false); return; }
+  try{
+    const blob=await _driveDownloadWithConfirm(fileId);
+    if(blob){
+      await savePdfBlobDirect(note.id, blob);
+      showOfflineToast('✅ "'+note.topic+'" refreshed!',true);
+      renderMaterial();
+      return;
+    }
+  }catch(e){ console.warn('Refresh from list failed',e); }
+  showOfflineToast('⚠️ Refresh failed — try opening the note instead.',false);
+}
+
 function _tryDownloadAndCacheBlob(noteId, fileId, onOk, onFail){
   const url=`https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`;
   savePdfBlob(noteId, url).then(ok=>{ if(ok) onOk(); else onFail(); });
@@ -2356,10 +2372,9 @@ function renderNotesList(c){
       return`<div class="note-card" id="nc-${n.id}"><div class="note-icon">📄</div>
         <div class="note-info"><div class="note-title">${n.topic}</div><div class="note-meta">${n.desc||'Study Notes'}${saved?' · 💾':''}</div></div>
         <div class="note-actions">
-          <button class="note-btn bm-btn ${bookmarked?'on':''}" onclick='toggleBookmarkNote(${safe})'>${bookmarked?'🔖':'📑'}</button>
           <button class="like-btn" id="likebtn-${n.id}" onclick='toggleLikeNote("${n.id}")'>🤍 <span class="like-count" id="likecount-${n.id}">0</span></button>
           <button class="note-btn" onclick='openPDF(${safe})'>Open 📂</button>
-          <button class="note-btn ${saved?'saved':''}" id="savebtn-${n.id}" onclick='toggleSaveNote(${safe});renderMaterial()'>${saved?'✅':'💾'}</button>
+          <button class="note-btn" onclick='openNoteMenu(event,${safe})' title="More">⋮</button>
         </div></div>`;
     }).join('')}</div>`:(showBookmarkedOnly?'<div class="empty-state">🔖 No bookmarked notes here yet.<br>Tap 📑 on any note to save it here.</div>':'<div class="empty-state">📭 No notes here yet.<br>Add via Admin → Note!</div>'));
     // After render: async update ✅/📥 status for saved notes
