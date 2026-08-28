@@ -2722,14 +2722,48 @@ function addVideo(){
 
 // Manage
 function renderManage(){
-  document.getElementById('manage-notes').innerHTML=notes.length?notes.map(n=>{
-    const co=courses.find(c=>c.id===n.courseId),su=subjects.find(s=>s.id===n.subjectId),fo=folders.find(f=>f.id===n.folderId);
-    return`<div class="manage-item"><div><div class="mi-title">${n.topic}</div><div class="mi-sub">${[co&&co.name,su&&su.name,fo&&fo.name].filter(Boolean).join(' › ')}</div></div><div style="display:flex;gap:6px;"><button class="edit-btn" onclick="editNote('${n.id}')">✏️ Edit</button><button class="del-btn" onclick="delNote('${n.id}')">Delete</button></div></div>`;
-  }).join(''):'<div style="font-size:12px;color:var(--muted)">No notes yet.</div>';
-  document.getElementById('manage-videos').innerHTML=videos.length?videos.map(v=>{
-    const co=courses.find(c=>c.id===v.courseId),su=subjects.find(s=>s.id===v.subjectId);
-    return`<div class="manage-item"><div><div class="mi-title">${v.title}</div><div class="mi-sub">${[co&&co.name,su&&su.name].filter(Boolean).join(' › ')}</div></div><button class="del-btn" onclick="delVideo('${v.id}')">Delete</button></div>`;
-  }).join(''):'<div style="font-size:12px;color:var(--muted)">No videos yet.</div>';
+  document.getElementById('manage-notes').innerHTML=notes.length?renderGroupedManageItems(notes,'note'):'<div style="font-size:12px;color:var(--muted)">No notes yet.</div>';
+  document.getElementById('manage-videos').innerHTML=videos.length?renderGroupedManageItems(videos,'video'):'<div style="font-size:12px;color:var(--muted)">No videos yet.</div>';
+}
+// Groups notes/videos by Course → Subject (→ Folder for notes) with headers, instead of one flat list
+function renderGroupedManageItems(items,type){
+  const sorted=[...items].sort((a,b)=>{
+    const coA=courses.find(c=>c.id===a.courseId),coB=courses.find(c=>c.id===b.courseId);
+    const suA=subjects.find(s=>s.id===a.subjectId),suB=subjects.find(s=>s.id===b.subjectId);
+    const foA=type==='note'?folders.find(f=>f.id===a.folderId):null, foB=type==='note'?folders.find(f=>f.id===b.folderId):null;
+    const nameA=type==='note'?a.topic:a.title, nameB=type==='note'?b.topic:b.title;
+    return (coA&&coA.name||'').localeCompare(coB&&coB.name||'')
+        || (suA&&suA.name||'').localeCompare(suB&&suB.name||'')
+        || (type==='note'?(foA&&foA.name||'').localeCompare(foB&&foB.name||''):0)
+        || (nameA||'').localeCompare(nameB||'');
+  });
+  let html='';
+  let lastCourse=null,lastSubject=null,lastFolder=null;
+  sorted.forEach(item=>{
+    const co=courses.find(c=>c.id===item.courseId),su=subjects.find(s=>s.id===item.subjectId);
+    const fo=type==='note'?folders.find(f=>f.id===item.folderId):null;
+    const courseName=co?co.name:'(No course)', subjectName=su?su.name:'(No subject)';
+    const folderName=type==='note'?(fo?fo.name:'(No folder)'):null;
+    if(courseName!==lastCourse){
+      html+=`<div style="font-size:13px;font-weight:800;color:var(--accent);margin:${lastCourse?'18px':'4px'} 0 4px;">🏫 ${escapeHTML(courseName)}</div>`;
+      lastCourse=courseName; lastSubject=null; lastFolder=null;
+    }
+    if(subjectName!==lastSubject){
+      html+=`<div style="font-size:12px;font-weight:700;color:var(--text);margin:8px 0 4px 10px;">📘 ${escapeHTML(subjectName)}</div>`;
+      lastSubject=subjectName; lastFolder=null;
+    }
+    if(type==='note'&&folderName!==lastFolder){
+      html+=`<div style="font-size:11px;font-weight:600;color:var(--muted);margin:6px 0 4px 20px;">📁 ${escapeHTML(folderName)}</div>`;
+      lastFolder=folderName;
+    }
+    const indent=type==='note'?20:10;
+    if(type==='note'){
+      html+=`<div class="manage-item" style="margin-left:${indent}px;"><div><div class="mi-title">${escapeHTML(item.topic)}</div></div><div style="display:flex;gap:6px;"><button class="edit-btn" onclick="editNote('${item.id}')">✏️ Edit</button><button class="del-btn" onclick="delNote('${item.id}')">Delete</button></div></div>`;
+    } else {
+      html+=`<div class="manage-item" style="margin-left:${indent}px;"><div><div class="mi-title">${escapeHTML(item.title)}</div></div><button class="del-btn" onclick="delVideo('${item.id}')">Delete</button></div>`;
+    }
+  });
+  return html;
 }
 function delNote(id){if(!confirm('Delete?'))return;notes=notes.filter(n=>n.id!==id);saveLocal();renderManage();}
 function delVideo(id){if(!confirm('Delete?'))return;videos=videos.filter(v=>v.id!==id);saveLocal();renderManage();}
@@ -4827,8 +4861,13 @@ function loadStudentsList(){
   if(!db||!fbConnected){ listEl.innerHTML='<div style="color:var(--muted);font-size:12px;">Connect Firebase first.</div>'; return; }
   sumEl.textContent='Loading...';
   listEl.innerHTML='';
-  db.ref('users').once('value',snap=>{
-    const data=snap.val()||{};
+  Promise.all([
+    db.ref('users').once('value'),
+    db.ref('medistudy_hours_lb').once('value')
+  ]).then(([usersSnap,hoursSnap])=>{
+    const data=usersSnap.val()||{};
+    const hoursData=hoursSnap.val()||{};
+    _totalStudyHours=Object.values(hoursData).reduce((sum,h)=>sum+(h.totalHours||0),0);
     _allStudents=Object.keys(data).map(uid=>{
       const u=data[uid]||{};
       const p=u.profile||{};
@@ -4839,7 +4878,8 @@ function loadStudentsList(){
         course: p.course||'—',
         gender: p.gender||'—',
         age: p.age||'—',
-        lastLogin: u.lastLogin||0
+        lastLogin: u.lastLogin||0,
+        totalHours: (hoursData[uid]&&hoursData[uid].totalHours)||0
       };
     }).sort((a,b)=>b.lastLogin-a.lastLogin);
     renderStudentsList();
@@ -4849,6 +4889,7 @@ function loadStudentsList(){
     console.error(err);
   });
 }
+let _totalStudyHours=0;
 function renderStudentsList(){
   const listEl=document.getElementById('students-list');
   const sumEl=document.getElementById('students-summary');
@@ -4856,7 +4897,9 @@ function renderStudentsList(){
   const startOfToday=new Date(); startOfToday.setHours(0,0,0,0);
   const todayTs=startOfToday.getTime();
   const rows=todayOnly?_allStudents.filter(s=>s.lastLogin>=todayTs):_allStudents;
-  sumEl.textContent=`${rows.length} of ${_allStudents.length} total registered students`+(todayOnly?' (logged in today)':'');
+  const totalDays=(_totalStudyHours/24).toFixed(1);
+  sumEl.innerHTML=`${rows.length} of ${_allStudents.length} total registered students`+(todayOnly?' (logged in today)':'')+
+    `<br><strong style="color:var(--text);">⏱ Total time spent in app (all students combined): ${_totalStudyHours.toFixed(1)}h (~${totalDays} days)</strong>`;
   if(!rows.length){ listEl.innerHTML='<div style="color:var(--muted);font-size:12px;">No students found.</div>'; return; }
   listEl.innerHTML=rows.map(s=>{
     const when=s.lastLogin?new Date(s.lastLogin).toLocaleString():'never';
@@ -4864,7 +4907,7 @@ function renderStudentsList(){
       <div style="font-weight:700;margin-bottom:2px;">${escapeHTML(s.name)}</div>
       <div style="color:var(--muted);">✉️ ${escapeHTML(s.email)}</div>
       <div style="color:var(--muted);">🎓 ${escapeHTML(s.course)} &nbsp; ⚧ ${escapeHTML(s.gender)} &nbsp; 🎂 ${escapeHTML(String(s.age))}</div>
-      <div style="color:var(--muted);">🕒 Last login: ${when}</div>
+      <div style="color:var(--muted);">🕒 Last login: ${when} &nbsp; ⏱ ${s.totalHours.toFixed(1)}h logged</div>
     </div>`;
   }).join('');
 }
