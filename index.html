@@ -288,6 +288,15 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 .login-box{text-align:center;}.login-err{color:#e85d38;font-size:12px;margin-top:6px;display:none;}
 .manage-list{display:flex;flex-direction:column;gap:6px;margin-top:6px;}
 .manage-item{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:9px 11px;display:flex;align-items:center;justify-content:space-between;gap:8px;}
+#manage-notes details,#manage-videos details{margin-bottom:4px;}
+#manage-notes summary,#manage-videos summary{list-style:none;cursor:pointer;padding:8px 10px;border-radius:8px;}
+#manage-notes summary::-webkit-details-marker,#manage-videos summary::-webkit-details-marker{display:none;}
+#manage-notes summary::before,#manage-videos summary::before{content:'▸';display:inline-block;width:14px;transition:transform .15s;}
+#manage-notes details[open]>summary::before,#manage-videos details[open]>summary::before{transform:rotate(90deg);}
+.mt-course>summary{font-size:13px;font-weight:800;color:var(--accent);background:var(--card);}
+.mt-subject>summary{font-size:12px;font-weight:700;color:var(--text);}
+.mt-folder>summary{font-size:11px;font-weight:600;color:var(--muted);}
+.mt-count{color:var(--muted);font-weight:400;}
 .mi-title{font-size:12px;font-weight:600;}.mi-sub{font-size:10px;color:var(--muted);}
 .del-btn{background:#2a0e0e;border:1px solid #5a1e1e;color:#e85d38;padding:3px 9px;border-radius:5px;font-size:11px;cursor:pointer;font-weight:600;flex-shrink:0;}
 .del-btn:hover{background:#e85d38;color:#fff;}
@@ -1044,7 +1053,8 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
         <div class="form-group"><label>LECTURE TITLE</label><input type="text" id="vid-title" placeholder="e.g. Heart Sounds Explained"></div>
         <div class="form-group"><label>DESCRIPTION (optional)</label><input type="text" id="vid-desc" placeholder="Short description..."></div>
         <div class="form-group"><label>YOUTUBE LINK</label><input type="url" id="vid-link" placeholder="https://youtube.com/watch?v=..."></div>
-        <button class="submit-btn" onclick="addVideo()">➕ Add Video</button>
+        <button class="submit-btn" id="vid-submit-btn" onclick="addVideo()">➕ Add Video</button>
+        <button class="submit-btn" id="vid-cancel-edit-btn" onclick="cancelEditVideo()" style="display:none;background:var(--card);color:var(--text);border:1px solid var(--border);margin-top:8px;">✕ Cancel Edit</button>
         <div class="success-msg" id="vid-success">✅ Video added!</div>
         <button class="submit-btn" onclick="pushToFirebase('vid-push-success')" style="background:var(--green);color:#052e16;margin-top:14px;">⬆️ Save & Push to Firebase</button>
         <div class="success-msg" id="vid-push-success">✅ Pushed! Everyone can now see this.</div>
@@ -2711,57 +2721,115 @@ function cancelEditNote(){
   document.getElementById('note-cancel-edit-btn').style.display='none';
 }
 // Add Video
+let editingVideoId=null;
 function addVideo(){
   const cId=document.getElementById('vid-course').value,sId=document.getElementById('vid-subject').value;
   const title=document.getElementById('vid-title').value.trim(),desc=document.getElementById('vid-desc').value.trim(),link=document.getElementById('vid-link').value.trim();
   if(!title||!link||!sId){alert('Select subject, fill Title and YouTube link!');return;}
+
+  if(editingVideoId){
+    const v=videos.find(x=>x.id===editingVideoId);
+    if(v){ v.courseId=cId; v.subjectId=sId; v.title=title; v.desc=desc; v.link=link; }
+    saveLocal();
+    cancelEditVideo();
+    flashSuccess('vid-success');
+    renderManage();
+    return;
+  }
+
   videos.push({id:uid(),courseId:cId,subjectId:sId,title,desc,link});saveLocal();
   ['vid-title','vid-desc','vid-link'].forEach(id=>document.getElementById(id).value='');
   flashSuccess('vid-success');
 }
+function editVideo(id){
+  const v=videos.find(x=>x.id===id);
+  if(!v)return;
+  editingVideoId=id;
+  document.getElementById('vid-course').value=v.courseId;
+  updateVidSubjects();
+  document.getElementById('vid-subject').value=v.subjectId;
+  document.getElementById('vid-title').value=v.title;
+  document.getElementById('vid-desc').value=v.desc||'';
+  document.getElementById('vid-link').value=v.link;
+  document.getElementById('vid-submit-btn').textContent='💾 Update Video';
+  document.getElementById('vid-cancel-edit-btn').style.display='block';
+  document.getElementById('atab-videos').click();
+}
+function cancelEditVideo(){
+  editingVideoId=null;
+  ['vid-title','vid-desc','vid-link'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('vid-submit-btn').textContent='➕ Add Video';
+  document.getElementById('vid-cancel-edit-btn').style.display='none';
+}
 
 // Manage
 function renderManage(){
-  document.getElementById('manage-notes').innerHTML=notes.length?renderGroupedManageItems(notes,'note'):'<div style="font-size:12px;color:var(--muted)">No notes yet.</div>';
-  document.getElementById('manage-videos').innerHTML=videos.length?renderGroupedManageItems(videos,'video'):'<div style="font-size:12px;color:var(--muted)">No videos yet.</div>';
+  document.getElementById('manage-notes').innerHTML=notes.length?renderNotesTree():'<div style="font-size:12px;color:var(--muted)">No notes yet.</div>';
+  document.getElementById('manage-videos').innerHTML=videos.length?renderVideosTree():'<div style="font-size:12px;color:var(--muted)">No videos yet.</div>';
 }
-// Groups notes/videos by Course → Subject (→ Folder for notes) with headers, instead of one flat list
-function renderGroupedManageItems(items,type){
-  const sorted=[...items].sort((a,b)=>{
-    const coA=courses.find(c=>c.id===a.courseId),coB=courses.find(c=>c.id===b.courseId);
-    const suA=subjects.find(s=>s.id===a.subjectId),suB=subjects.find(s=>s.id===b.subjectId);
-    const foA=type==='note'?folders.find(f=>f.id===a.folderId):null, foB=type==='note'?folders.find(f=>f.id===b.folderId):null;
-    const nameA=type==='note'?a.topic:a.title, nameB=type==='note'?b.topic:b.title;
-    return (coA&&coA.name||'').localeCompare(coB&&coB.name||'')
-        || (suA&&suA.name||'').localeCompare(suB&&suB.name||'')
-        || (type==='note'?(foA&&foA.name||'').localeCompare(foB&&foB.name||''):0)
-        || (nameA||'').localeCompare(nameB||'');
+// Collapsible tree: Course > Subject > Folder > Notes
+function renderNotesTree(){
+  const tree={};
+  notes.forEach(n=>{
+    const co=courses.find(c=>c.id===n.courseId),su=subjects.find(s=>s.id===n.subjectId),fo=folders.find(f=>f.id===n.folderId);
+    const cK=co?co.id:'none',sK=su?su.id:'none',fK=fo?fo.id:'none';
+    tree[cK]=tree[cK]||{name:co?co.name:'(No course)',subjects:{}};
+    tree[cK].subjects[sK]=tree[cK].subjects[sK]||{name:su?su.name:'(No subject)',folders:{}};
+    tree[cK].subjects[sK].folders[fK]=tree[cK].subjects[sK].folders[fK]||{name:fo?fo.name:'(No folder)',items:[]};
+    tree[cK].subjects[sK].folders[fK].items.push(n);
   });
   let html='';
-  let lastCourse=null,lastSubject=null,lastFolder=null;
-  sorted.forEach(item=>{
-    const co=courses.find(c=>c.id===item.courseId),su=subjects.find(s=>s.id===item.subjectId);
-    const fo=type==='note'?folders.find(f=>f.id===item.folderId):null;
-    const courseName=co?co.name:'(No course)', subjectName=su?su.name:'(No subject)';
-    const folderName=type==='note'?(fo?fo.name:'(No folder)'):null;
-    if(courseName!==lastCourse){
-      html+=`<div style="font-size:13px;font-weight:800;color:var(--accent);margin:${lastCourse?'18px':'4px'} 0 4px;">🏫 ${escapeHTML(courseName)}</div>`;
-      lastCourse=courseName; lastSubject=null; lastFolder=null;
-    }
-    if(subjectName!==lastSubject){
-      html+=`<div style="font-size:12px;font-weight:700;color:var(--text);margin:8px 0 4px 10px;">📘 ${escapeHTML(subjectName)}</div>`;
-      lastSubject=subjectName; lastFolder=null;
-    }
-    if(type==='note'&&folderName!==lastFolder){
-      html+=`<div style="font-size:11px;font-weight:600;color:var(--muted);margin:6px 0 4px 20px;">📁 ${escapeHTML(folderName)}</div>`;
-      lastFolder=folderName;
-    }
-    const indent=type==='note'?20:10;
-    if(type==='note'){
-      html+=`<div class="manage-item" style="margin-left:${indent}px;"><div><div class="mi-title">${escapeHTML(item.topic)}</div></div><div style="display:flex;gap:6px;"><button class="edit-btn" onclick="editNote('${item.id}')">✏️ Edit</button><button class="del-btn" onclick="delNote('${item.id}')">Delete</button></div></div>`;
-    } else {
-      html+=`<div class="manage-item" style="margin-left:${indent}px;"><div><div class="mi-title">${escapeHTML(item.title)}</div></div><button class="del-btn" onclick="delVideo('${item.id}')">Delete</button></div>`;
-    }
+  Object.keys(tree).sort((a,b)=>tree[a].name.localeCompare(tree[b].name)).forEach(cK=>{
+    const c=tree[cK];
+    const subjKeys=Object.keys(c.subjects).sort((a,b)=>c.subjects[a].name.localeCompare(c.subjects[b].name));
+    const courseCount=subjKeys.reduce((s,sK)=>s+Object.values(c.subjects[sK].folders).reduce((s2,f)=>s2+f.items.length,0),0);
+    html+=`<details class="mt-course"><summary>🏫 ${escapeHTML(c.name)} <span class="mt-count">(${courseCount})</span></summary><div style="padding-left:14px;">`;
+    subjKeys.forEach(sK=>{
+      const s=c.subjects[sK];
+      const folderKeys=Object.keys(s.folders).sort((a,b)=>s.folders[a].name.localeCompare(s.folders[b].name));
+      const subjCount=folderKeys.reduce((n,fK)=>n+s.folders[fK].items.length,0);
+      html+=`<details class="mt-subject"><summary>📘 ${escapeHTML(s.name)} <span class="mt-count">(${subjCount})</span></summary><div style="padding-left:14px;">`;
+      folderKeys.forEach(fK=>{
+        const fo=s.folders[fK];
+        const items=[...fo.items].sort((a,b)=>a.topic.localeCompare(b.topic));
+        html+=`<details class="mt-folder"><summary>📁 ${escapeHTML(fo.name)} <span class="mt-count">(${items.length})</span></summary><div style="padding-left:14px;padding-top:4px;">`;
+        items.forEach(n=>{
+          html+=`<div class="manage-item" style="margin-bottom:6px;"><div><div class="mi-title">${escapeHTML(n.topic)}</div></div><div style="display:flex;gap:6px;"><button class="edit-btn" onclick="editNote('${n.id}')">✏️ Edit</button><button class="del-btn" onclick="delNote('${n.id}')">Delete</button></div></div>`;
+        });
+        html+='</div></details>';
+      });
+      html+='</div></details>';
+    });
+    html+='</div></details>';
+  });
+  return html;
+}
+// Collapsible tree: Course > Subject > Videos
+function renderVideosTree(){
+  const tree={};
+  videos.forEach(v=>{
+    const co=courses.find(c=>c.id===v.courseId),su=subjects.find(s=>s.id===v.subjectId);
+    const cK=co?co.id:'none',sK=su?su.id:'none';
+    tree[cK]=tree[cK]||{name:co?co.name:'(No course)',subjects:{}};
+    tree[cK].subjects[sK]=tree[cK].subjects[sK]||{name:su?su.name:'(No subject)',items:[]};
+    tree[cK].subjects[sK].items.push(v);
+  });
+  let html='';
+  Object.keys(tree).sort((a,b)=>tree[a].name.localeCompare(tree[b].name)).forEach(cK=>{
+    const c=tree[cK];
+    const subjKeys=Object.keys(c.subjects).sort((a,b)=>c.subjects[a].name.localeCompare(c.subjects[b].name));
+    const courseCount=subjKeys.reduce((s,sK)=>s+c.subjects[sK].items.length,0);
+    html+=`<details class="mt-course"><summary>🏫 ${escapeHTML(c.name)} <span class="mt-count">(${courseCount})</span></summary><div style="padding-left:14px;">`;
+    subjKeys.forEach(sK=>{
+      const s=c.subjects[sK];
+      const items=[...s.items].sort((a,b)=>a.title.localeCompare(b.title));
+      html+=`<details class="mt-subject"><summary>📘 ${escapeHTML(s.name)} <span class="mt-count">(${items.length})</span></summary><div style="padding-left:14px;padding-top:4px;">`;
+      items.forEach(v=>{
+        html+=`<div class="manage-item" style="margin-bottom:6px;"><div><div class="mi-title">${escapeHTML(v.title)}</div></div><div style="display:flex;gap:6px;"><button class="edit-btn" onclick="editVideo('${v.id}')">✏️ Edit</button><button class="del-btn" onclick="delVideo('${v.id}')">Delete</button></div></div>`;
+      });
+      html+='</div></details>';
+    });
+    html+='</div></details>';
   });
   return html;
 }
