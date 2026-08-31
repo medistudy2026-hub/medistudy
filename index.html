@@ -1004,6 +1004,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
       </div>
       <div class="admin-tabs">
         <div class="atab active" id="atab-structure" onclick="switchATab('structure',this)">🏗️ Structure</div>
+        <div class="atab" id="atab-dashboard" onclick="switchATab('dashboard',this)">📊 Dashboard</div>
         <div class="atab" id="atab-notes" onclick="switchATab('notes',this)">📝 Note</div>
         <div class="atab" id="atab-videos" onclick="switchATab('videos',this)">🎥 Video</div>
         <div class="atab" id="atab-manage" onclick="switchATab('manage',this)">🗑️ Manage</div>
@@ -1033,6 +1034,15 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
         <div class="success-msg" id="struct-push-success">✅ Pushed! Everyone can now see this.</div>
       </div>
       <!-- NOTE -->
+      <div class="aform" id="aform-dashboard">
+        <div class="section-label">📊 Dashboard</div>
+        <div id="dash-summary-cards" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">
+          <div style="font-size:12px;color:var(--muted);">Loading...</div>
+        </div>
+        <div class="section-label">🔥 Top Liked Notes</div>
+        <div id="dash-top-liked"></div>
+      </div>
+
       <div class="aform" id="aform-notes">
         <div class="form-group"><label>COURSE</label><select id="note-course" onchange="updateNoteSubjects()"></select></div>
         <div class="form-group"><label>SUBJECT</label><select id="note-subject" onchange="updateNoteFolders()"></select></div>
@@ -2574,6 +2584,7 @@ function switchATab(tab,el){
   document.querySelectorAll('.aform').forEach(f=>f.classList.remove('active'));
   el.classList.add('active');document.getElementById('aform-'+tab).classList.add('active');
   if(tab==='manage')renderManage();
+  if(tab==='dashboard')loadDashboard();
   if(tab==='notes'){updateNoteSubjects();updateNoteFolders();}
   if(tab==='videos')updateVidSubjects();
   if(tab==='firebase')updateFBStatus();
@@ -4980,8 +4991,72 @@ function renderStudentsList(){
   }).join('');
 }
 
-// ═══════════════ ADMIN: FEEDBACK LIST ═══════════════
-let _allFeedback=[];
+// ═══════════════ ADMIN: DASHBOARD ═══════════════
+function loadDashboard(){
+  const cardsEl=document.getElementById('dash-summary-cards');
+  const likedEl=document.getElementById('dash-top-liked');
+  if(!db||!fbConnected){ cardsEl.innerHTML='<div style="color:var(--muted);font-size:12px;">Connect Firebase first.</div>'; return; }
+  cardsEl.innerHTML='<div style="color:var(--muted);font-size:12px;">Loading...</div>';
+  likedEl.innerHTML='';
+
+  Promise.all([
+    db.ref('users').once('value'),
+    db.ref('medistudy_hours_lb').once('value'),
+    db.ref('medistudy_feedback').orderByChild('timestamp').limitToLast(50).once('value'),
+    db.ref('medistudy_likes').once('value')
+  ]).then(([usersSnap,hoursSnap,fbSnap,likesSnap])=>{
+    // Students summary
+    const usersData=usersSnap.val()||{};
+    const hoursData=hoursSnap.val()||{};
+    const totalStudents=Object.keys(usersData).length;
+    const totalHours=Object.values(hoursData).reduce((s,h)=>s+(h.totalHours||0),0);
+
+    // New feedback count
+    const fbData=fbSnap.val()||{};
+    const newCount=Object.values(fbData).filter(f=>(f.status||'New')==='New').length;
+
+    // Notes/Videos totals (already in-memory)
+    const noteCount=notes.length, vidCount=videos.length;
+
+    cardsEl.innerHTML=`
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;">
+        <div style="font-size:12px;color:var(--muted);">👥 Students</div>
+        <div style="font-size:18px;font-weight:800;">${totalStudents} <span style="font-size:12px;font-weight:400;color:var(--muted);">registered</span></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px;">⏱ ${totalHours.toFixed(1)}h combined time in app</div>
+      </div>
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;">
+        <div style="font-size:12px;color:var(--muted);">💬 Feedback</div>
+        <div style="font-size:18px;font-weight:800;color:${newCount>0?'#3b82f6':'var(--text)'};">${newCount} <span style="font-size:12px;font-weight:400;color:var(--muted);">🔵 New (unreviewed)</span></div>
+      </div>
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;">
+        <div style="font-size:12px;color:var(--muted);">📚 Content</div>
+        <div style="font-size:18px;font-weight:800;">${noteCount} <span style="font-size:12px;font-weight:400;color:var(--muted);">notes</span> &nbsp; ${vidCount} <span style="font-size:12px;font-weight:400;color:var(--muted);">videos</span></div>
+      </div>
+    `;
+
+    // Top liked notes
+    const likesData=likesSnap.val()||{};
+    const likeCounts=Object.keys(likesData).map(noteId=>({
+      noteId, count:Object.keys(likesData[noteId]||{}).length
+    })).filter(x=>x.count>0).sort((a,b)=>b.count-a.count).slice(0,10);
+
+    if(!likeCounts.length){ likedEl.innerHTML='<div style="font-size:12px;color:var(--muted);">No likes yet.</div>'; return; }
+    likedEl.innerHTML=likeCounts.map((lc,i)=>{
+      const n=notes.find(x=>x.id===lc.noteId);
+      if(!n) return '';
+      const co=courses.find(c=>c.id===n.courseId),su=subjects.find(s=>s.id===n.subjectId);
+      return `<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;">
+        <div><div style="font-weight:700;">${i+1}. ${escapeHTML(n.topic)}</div><div style="color:var(--muted);">${[co&&co.name,su&&su.name].filter(Boolean).join(' › ')}</div></div>
+        <div style="color:var(--accent2);font-weight:700;white-space:nowrap;">❤️ ${lc.count}</div>
+      </div>`;
+    }).join('');
+  },err=>{
+    cardsEl.innerHTML='<div style="color:#e85d38;font-size:12px;">⚠️ Could not load dashboard data.</div>';
+    console.error(err);
+  });
+}
+
+
 const FB_CAT_ICON={Bug:'🐞',Suggestion:'💡',Praise:'❤️',Other:'✏️'};
 const FB_STATUS_ICON={New:'🔵 New',Seen:'🟡 Seen',Resolved:'🟢 Resolved'};
 function loadFeedbackList(){
@@ -5113,7 +5188,12 @@ function flushActiveTime(){
     const k=todayKey();
     weekLog[k]=Math.round(((weekLog[k]||0)+hrs)*100)/100;
     localStorage.setItem('ms_weeklog',JSON.stringify(weekLog));
-    if(currentUser && db){
+    // Use Firebase's own live session (auth.currentUser) as a fallback in case our
+    // cached `currentUser` variable went stale without a fresh sign-in event firing.
+    // This is read-only — it never changes sign-in state, just re-checks it.
+    const liveUser = currentUser || (auth && auth.currentUser) || null;
+    if(liveUser && db){
+      if(!currentUser) currentUser = liveUser; // self-heal our cached copy
       syncToFirebase('weeklog',weekLog);
       updateHoursLB();
     }
@@ -5126,6 +5206,12 @@ document.addEventListener('visibilitychange', () => {
 });
 // Safety net for mobile browsers/PWAs that close without a clean visibilitychange
 window.addEventListener('pagehide', flushActiveTime);
+// Second safety net: periodically save progress during long continuous sessions,
+// so a force-swipe-close (which can skip the events above on some Android devices)
+// only loses a few minutes instead of the whole session.
+setInterval(() => {
+  if(!document.hidden) flushActiveTime();
+}, 5*60*1000); // every 5 minutes
 
 // Track session start
 gtag('event', 'session_start', {
