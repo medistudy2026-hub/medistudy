@@ -179,7 +179,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 .saved-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;background:#0e3a1c;color:var(--green);border:1px solid var(--green);margin-bottom:4px;}
 .pdf-overlay{position:fixed;inset:0;z-index:300;background:var(--bg);display:none;flex-direction:column;}
 .pdf-overlay.open{display:flex;}
-.pdf-viewer-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;align-items:center;gap:10px;}
+.pdf-viewer-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;align-items:center;gap:10px;max-height:70px;overflow:hidden;transition:max-height .25s ease,opacity .2s ease,padding .25s ease,border-bottom-width .25s ease;flex-shrink:0;}
 .pdf-title{font-size:13px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .pdf-close-btn{padding:6px 14px;border-radius:8px;background:var(--accent2);color:#fff;border:none;cursor:pointer;font-size:12px;font-weight:600;}
 .pdf-save-bar-btn{padding:6px 14px;border-radius:8px;background:var(--green);color:#052e16;border:none;cursor:pointer;font-size:12px;font-weight:700;}
@@ -191,8 +191,15 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 #pdf-canvas-container{flex:1;overflow-y:auto;overflow-x:auto;background:#525659;display:none;-webkit-overflow-scrolling:touch;}
 #pdf-canvas-container canvas{display:block;margin:8px auto;box-shadow:0 2px 8px rgba(0,0,0,.5);max-width:100%;}
 .pdf-progress-bar{height:3px;background:var(--green);width:0%;transition:width .3s;position:absolute;top:0;left:0;right:0;}
-.pdf-nav-bar{background:var(--surface);border-top:1px solid var(--border);padding:8px 14px;display:none;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0;}
-.pdf-nav-bar.visible{display:flex;}
+.pdf-nav-bar{background:var(--surface);border-top:1px solid var(--border);padding:0 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0;max-height:0;overflow:hidden;opacity:0;pointer-events:none;border-top-width:0;transition:max-height .25s ease,opacity .2s ease,padding .25s ease,border-top-width .25s ease;}
+.pdf-nav-bar.visible{max-height:60px;padding:8px 14px;opacity:1;pointer-events:auto;border-top-width:1px;}
+/* Immersive reading mode — tap the note to hide both bars and reclaim vertical space (biggest win in landscape) */
+.pdf-overlay.immersive .pdf-viewer-bar{max-height:0;padding-top:0;padding-bottom:0;opacity:0;pointer-events:none;border-bottom-width:0;}
+.pdf-overlay.immersive .pdf-nav-bar.visible{max-height:0;padding-top:0;padding-bottom:0;opacity:0;pointer-events:none;border-top-width:0;}
+.pdf-immersive-hint{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);background:rgba(0,0,0,.75);color:#fff;font-size:11px;font-weight:600;padding:7px 14px;border-radius:20px;z-index:20;opacity:0;pointer-events:none;transition:opacity .3s ease;white-space:nowrap;}
+.pdf-immersive-hint.show{opacity:1;}
+.pdf-immersive-toggle{position:absolute;right:10px;bottom:10px;width:34px;height:34px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;border:none;font-size:15px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:25;opacity:.55;transition:opacity .2s ease;}
+.pdf-immersive-toggle:active{opacity:1;}
 .pdf-nav-btn{padding:6px 16px;border-radius:8px;background:var(--surface2);color:var(--text);border:1px solid var(--border);cursor:pointer;font-size:13px;font-weight:600;}
 .pdf-nav-btn:disabled{opacity:.35;cursor:default;}
 #pdf-page-info{font-size:12px;color:var(--muted);}
@@ -902,7 +909,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
     <span id="pdf-loading-msg" style="font-size:12px;color:var(--muted);">Opening document...</span>
   </div>
   <!-- PDF.js canvas renderer -->
-  <div id="pdf-canvas-container"></div>
+  <div id="pdf-canvas-container" onclick="onPdfContentTap(event)"></div>
   <!-- Fallback iframe for Drive preview -->
   <iframe class="pdf-frame" id="pdf-frame" allowfullscreen style="display:none;"></iframe>
   <div class="pdf-no-embed" id="pdf-no-embed" style="display:none;">
@@ -913,6 +920,8 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
       <button class="pdf-close-btn" onclick="closePDF()" style="font-size:14px;padding:10px 24px;">← Go Back</button>
     </div>
   </div>
+  <div class="pdf-immersive-hint" id="pdf-immersive-hint">👆 Tap the page to show/hide controls</div>
+  <button class="pdf-immersive-toggle" id="pdf-immersive-toggle" onclick="togglePDFImmersive()" title="Show/hide controls">⤢</button>
   <!-- Page navigation bar -->
   <div class="pdf-nav-bar" id="pdf-nav-bar">
     <button class="pdf-nav-btn" id="pdf-prev-btn" onclick="pdfPrevPage()" disabled>◀ Prev</button>
@@ -1594,6 +1603,7 @@ function fmt(t){return t.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace
 
 // ═══════════════ PDF VIEWER (PDF.js) ═══════════════
 let pdfJsDoc=null, pdfCurrentPage=1, pdfTotalPages=0, pdfRendering=false, pdfBlobUrl=null, pdfCurrentBlob=null;
+let pdfImmersiveTimer=null;
 
 // Configure PDF.js worker
 if(typeof pdfjsLib!=='undefined'){
@@ -1938,6 +1948,8 @@ async function _driveDownloadWithConfirm(fileId){
 
 async function openPDF(note){
   currentPDF=note;
+  document.getElementById('pdf-overlay').classList.remove('immersive');
+  schedulePDFAutoImmersive();
   document.getElementById('pdf-title').textContent=note.topic;
   document.getElementById('pdf-overlay').classList.add('open');
   pdfJsDoc=null; pdfCurrentPage=1; pdfTotalPages=0; pdfRendering=false;
@@ -1997,6 +2009,9 @@ async function openPDF(note){
 
 function closePDF(){
   document.getElementById('pdf-overlay').classList.remove('open');
+  document.getElementById('pdf-overlay').classList.remove('immersive');
+  clearTimeout(pdfImmersiveTimer); pdfImmersiveTimer=null;
+  document.getElementById('pdf-immersive-hint').classList.remove('show');
   // Cleanup
   if(pdfBlobUrl){ URL.revokeObjectURL(pdfBlobUrl); pdfBlobUrl=null; }
   pdfCurrentBlob=null;
@@ -2011,6 +2026,36 @@ function closePDF(){
   pdfJsDoc=null; pdfCurrentPage=1; pdfTotalPages=0; pdfRendering=false;
   currentPDF=null;
 }
+
+// ── Immersive reading mode: hide top/bottom bars to give full-screen space for the note ──
+function togglePDFImmersive(){
+  const overlay=document.getElementById('pdf-overlay');
+  clearTimeout(pdfImmersiveTimer);
+  overlay.classList.toggle('immersive');
+  document.getElementById('pdf-immersive-hint').classList.remove('show');
+}
+// Tapping the note content itself toggles immersive mode (ignored if the tap was a drag/scroll or hit a control)
+function onPdfContentTap(event){
+  if(event.target.closest('button,a,select,input'))return;
+  togglePDFImmersive();
+}
+// Auto-hide bars shortly after opening — landscape gets a quick auto-hide since screen height is tightest there;
+// portrait leaves bars visible by default (plenty of room already) but tap-to-hide still works either way.
+function schedulePDFAutoImmersive(){
+  clearTimeout(pdfImmersiveTimer);
+  const isLandscape=window.matchMedia('(orientation: landscape)').matches;
+  const delay=isLandscape?1800:4000;
+  pdfImmersiveTimer=setTimeout(()=>{
+    document.getElementById('pdf-overlay').classList.add('immersive');
+    const hint=document.getElementById('pdf-immersive-hint');
+    hint.classList.add('show');
+    setTimeout(()=>hint.classList.remove('show'),2200);
+  },delay);
+}
+// If the phone is rotated while a note is open, re-arm the auto-hide for the new orientation
+window.addEventListener('orientationchange',()=>{
+  if(document.getElementById('pdf-overlay').classList.contains('open'))schedulePDFAutoImmersive();
+});
 
 function updatePDFSaveBtn(id){
   const btn=document.getElementById('pdf-save-bar-btn');
@@ -4131,16 +4176,23 @@ function showQuizResult(){
   if(typeof gtag !== 'undefined'){
     gtag('event','quiz_completed',{event_category:'Quiz', event_label: currentQuizSet?currentQuizSet.title:'', value: pct});
   }
-  // Save this student's best score to the automatic course leaderboard
-  if(currentUser&&db&&currentQuizSet&&currentQuizSet.courseId){
-    const lbRef=db.ref('medistudy_quiz_lb/'+currentQuizSet.courseId+'/'+currentUser.uid);
-    lbRef.once('value').then(snap=>{
-      const existing=snap.val();
-      if(!existing||pct>existing.best){
-        const name=(userProfile&&userProfile.name)||currentUser.displayName||(currentUser.email?currentUser.email.split('@')[0]:'Student');
-        lbRef.set({name,best:pct,ts:Date.now()}).catch(e=>console.warn('Quiz LB sync failed:',e));
-      }
-    }).catch(e=>console.warn('Quiz LB read failed:',e));
+  // Save this student's best score to the automatic course leaderboard.
+  // Use Firebase's own live session (auth.currentUser) as a fallback in case our
+  // cached `currentUser` variable went stale without a fresh sign-in event firing
+  // (same staleness issue fixed for study-hours sync — see flushActiveTime()).
+  const lbUser=currentUser||(auth && auth.currentUser)||null;
+  if(lbUser){
+    if(!currentUser) currentUser=lbUser; // self-heal our cached copy
+    if(db&&currentQuizSet&&currentQuizSet.courseId){
+      const lbRef=db.ref('medistudy_quiz_lb/'+currentQuizSet.courseId+'/'+lbUser.uid);
+      lbRef.once('value').then(snap=>{
+        const existing=snap.val();
+        if(!existing||pct>existing.best){
+          const name=(userProfile&&userProfile.name)||lbUser.displayName||(lbUser.email?lbUser.email.split('@')[0]:'Student');
+          lbRef.set({name,best:pct,ts:Date.now()}).catch(e=>console.warn('Quiz LB sync failed:',e));
+        }
+      }).catch(e=>console.warn('Quiz LB read failed:',e));
+    }
   }
 }
 
