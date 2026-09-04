@@ -427,6 +427,7 @@ async function openPDF(note){
   schedulePDFAutoImmersive();
   document.getElementById('pdf-title').textContent=note.topic;
   document.getElementById('pdf-overlay').classList.add('open');
+  try{ history.pushState({msPdfOpen:true},'',location.pathname+location.search); }catch(e){}
   pdfJsDoc=null; pdfCurrentPage=1; pdfTotalPages=0; pdfRendering=false;
 
   const m=note.link.match(/\/d\/([a-zA-Z0-9_-]+)/);
@@ -482,9 +483,12 @@ async function openPDF(note){
   frame.onload=()=>clearTimeout(iframeTimer);
 }
 
+let _pdfClosingViaBack=false;
 function closePDF(){
-  document.getElementById('pdf-overlay').classList.remove('open');
-  document.getElementById('pdf-overlay').classList.remove('immersive');
+  const overlay=document.getElementById('pdf-overlay');
+  const wasOpen=overlay.classList.contains('open');
+  overlay.classList.remove('open');
+  overlay.classList.remove('immersive');
   clearTimeout(pdfImmersiveTimer); pdfImmersiveTimer=null;
   document.getElementById('pdf-immersive-hint').classList.remove('show');
   // Cleanup
@@ -500,6 +504,12 @@ function closePDF(){
   _pdfSetProgress(0);
   pdfJsDoc=null; pdfCurrentPage=1; pdfTotalPages=0; pdfRendering=false;
   currentPDF=null;
+  // If this was closed via the ✕ Close button (not the phone/browser back button), pop the
+  // history entry we pushed when opening the PDF so Back doesn't land on a leftover empty state.
+  if(wasOpen && !_pdfClosingViaBack){
+    try{ if(history.state && history.state.msPdfOpen) history.back(); }catch(e){}
+  }
+  _pdfClosingViaBack=false;
 }
 
 // ── Immersive reading mode: hide top/bottom bars to give full-screen space for the note ──

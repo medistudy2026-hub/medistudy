@@ -178,12 +178,14 @@ function restoreLastScreen(){
   lastScreenRestored=true;
   try{
     const raw=localStorage.getItem('ms_lastScreen');
-    if(!raw) return;
+    if(!raw){ saveLastScreen('home'); return; }
     const data=JSON.parse(raw);
-    if(!data || !data.id || data.id==='home' || data.id==='about') return;
-    // Don't auto-reopen a locked page if the student isn't signed in — just stay on Home
+    if(!data || !data.id || data.id==='home' || data.id==='about'){ saveLastScreen('home'); return; }
+    // Don't auto-reopen a locked page if the student isn't signed in — just stay on Home for now
+    // (don't overwrite the saved screen here: if auth is just slow to resolve, we don't want to
+    // permanently forget a gated page the student was legitimately signed into)
     if(LOGIN_GATED[data.id] && !currentUser) return;
-    if(!document.getElementById('page-'+data.id)) return;
+    if(!document.getElementById('page-'+data.id)){ saveLastScreen('home'); return; }
     goPage(data.id, true);
     if(data.id==='material' && data.smView) goMaterialView(data.smView);
   }catch(e){}
@@ -230,6 +232,13 @@ function goMaterialView(view){
 try{ history.replaceState({msPage:'home'},'',location.pathname+location.search); }catch(e){}
 // When the device/browser back button is pressed, move one step back inside the app instead of quitting
 window.addEventListener('popstate',(e)=>{
+  // If a PDF is open, Back should just close it — the page underneath is already correct as-is
+  const pdfOverlay=document.getElementById('pdf-overlay');
+  if(pdfOverlay && pdfOverlay.classList.contains('open')){
+    _pdfClosingViaBack=true;
+    closePDF();
+    return;
+  }
   isBackNav=true;
   const state=e.state||{msPage:'home'};
   if(state.msPage==='material')smView=state.smView||{level:'courses'};
