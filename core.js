@@ -241,7 +241,13 @@ window.addEventListener('popstate',(e)=>{
   }
   isBackNav=true;
   const state=e.state||{msPage:'home'};
-  if(state.msPage==='material')smView=state.smView||{level:'courses'};
+  if(state.msPage==='material'){
+    const lc=getStudentCourseId();
+    let view=state.smView||{level:'courses'};
+    // A locked student should never land back on the full course list — send them to their own course's subjects instead
+    if(lc && view.level==='courses'){ view={level:'subjects',courseId:lc}; }
+    smView=view;
+  }
   goPage(state.msPage||'home',false);
 });
 
@@ -253,6 +259,7 @@ window.addEventListener('load', function(){
   renderQNotes();
   updateProfileUI();
   if(!navigator.onLine) showOfflineToast('📡 You are offline — saved content still works!',false);
+  maybeShowProfilePrompt();
 });
 
 // Hardcoded Firebase config — always connected!
@@ -491,6 +498,22 @@ function saveProfile(){
     chatUserName = userProfile.name;
     localStorage.setItem('ms_chat_name', chatUserName);
   }
+}
+
+// Prompt students to complete their profile (name + course) — auto-opens on first launch and
+// keeps gently re-prompting each session until a course is actually set, since course-locking
+// (Study Material / Videos / MCQ / Leaderboard all showing only their own course) depends on it.
+function maybeShowProfilePrompt(){
+  if(userProfile && userProfile.course) return; // already set — stop nagging
+  setTimeout(()=>{
+    if(userProfile && userProfile.course) return; // could've been set in the meantime
+    const loginModal=document.getElementById('login-modal');
+    if(loginModal && loginModal.classList.contains('open')) return; // don't stack on top of another modal
+    const adminModal=document.getElementById('admin-modal');
+    if(adminModal && adminModal.classList.contains('open')) return;
+    openProfile();
+    showProfileEdit();
+  }, 1200);
 }
 
 
