@@ -260,6 +260,7 @@ window.addEventListener('load', function(){
   updateProfileUI();
   if(!navigator.onLine) showOfflineToast('📡 You are offline — saved content still works!',false);
   maybeShowProfilePrompt();
+  if(typeof trackCourseUserProperty==='function')trackCourseUserProperty();
 });
 
 // Hardcoded Firebase config — always connected!
@@ -485,6 +486,7 @@ function saveProfile(){
   syncToFirebase('profile', userProfile);
   updateProfileUI();
   showProfileView();
+  if(typeof trackCourseUserProperty==='function')trackCourseUserProperty();
   // If the course changed, refresh any course-locked pages so the switch takes effect immediately
   if(prevCourse!==userProfile.course){
     const lc=getStudentCourseId();

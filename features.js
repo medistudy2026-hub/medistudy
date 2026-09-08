@@ -1141,7 +1141,7 @@ function openVideo(elOrLink, ttlOverride, linkOverride) {
   if(typeof gtag !== 'undefined') {
     const vco = courses.find(c=>c.id===currentVideo.courseId);
     const vsu = vco && vco.subjects ? vco.subjects.find(s=>s.id===currentVideo.subjectId) : null;
-    gtag('event', 'video_opened', { event_category: 'Videos', event_label: ttl, course: vco?vco.name:'', subject: vsu?vsu.name:'' });
+    gtag('event', 'video_opened', { event_category: 'Videos', event_label: ttl, video_title: ttl, course: vco?vco.name:'', subject: vsu?vsu.name:'' });
   }
   setTimeout(updateVideoSaveBtn, 100);
 }
@@ -1385,7 +1385,7 @@ function startQuiz(id){
     document.getElementById('quiz-active').style.display='block';
     showQuestion();
     if(typeof gtag !== 'undefined'){
-      gtag('event','quiz_started',{event_category:'Quiz', event_label: set.title||id});
+      gtag('event','quiz_started',{event_category:'Quiz', event_label: set.title||id, quiz_title: set.title||id});
     }
   });
 }
@@ -1450,7 +1450,7 @@ function showQuizResult(){
   document.getElementById('quiz-result-emoji').textContent=emoji;
   document.getElementById('quiz-result-msg').textContent=msg;
   if(typeof gtag !== 'undefined'){
-    gtag('event','quiz_completed',{event_category:'Quiz', event_label: currentQuizSet?currentQuizSet.title:'', value: pct});
+    gtag('event','quiz_completed',{event_category:'Quiz', event_label: currentQuizSet?currentQuizSet.title:'', quiz_title: currentQuizSet?currentQuizSet.title:'', value: pct});
   }
   // Save this student's best score to the automatic course leaderboard.
   // Use Firebase's own live session (auth.currentUser) as a fallback in case our
@@ -1501,6 +1501,16 @@ function exitQuiz(){
 }
 
 // ═══════════════ ANALYTICS TRACKING ═══════════════
+// Tag every event in this session with the student's course as a GA4 "user property"
+// (not just a per-event parameter) — this is what makes the "Course" report actually
+// reflect most activity instead of showing "(not set)" for the majority of events.
+// Reads the course name live from the `courses` list, so adding a new course in the
+// admin panel needs no code change here — whatever name is set just flows through.
+function trackCourseUserProperty(){
+  if(typeof gtag==='undefined')return;
+  const co=courses.find(c=>c.id===userProfile.course);
+  if(co && co.name){ gtag('set','user_properties',{course:co.name}); }
+}
 // Track time spent in app
 let sessionStart = Date.now();
 let activeStart = Date.now();
@@ -1524,6 +1534,7 @@ window.openPDF = function(note) {
   gtag('event', 'note_opened', {
     event_category: 'Study Material',
     event_label: note.topic,
+    note_title: note.topic,
     course: ctx.course,
     subject: ctx.subject
   });
@@ -1546,6 +1557,7 @@ function _flushNoteTime(){
     gtag('event','note_time_spent',{
       event_category:'Study Material',
       event_label: _noteOpenMeta?_noteOpenMeta.title:'',
+      note_title: _noteOpenMeta?_noteOpenMeta.title:'',
       course: _noteOpenMeta?_noteOpenMeta.course:'',
       subject: _noteOpenMeta?_noteOpenMeta.subject:'',
       value: minutes
@@ -1566,7 +1578,8 @@ window.toggleSaveNote = function(note) {
   const isSaved = !savedNotes.some(s => s.id === note.id); // after toggle
   gtag('event', isSaved ? 'note_saved' : 'note_unsaved', {
     event_category: 'Offline',
-    event_label: note.topic
+    event_label: note.topic,
+    note_title: note.topic
   });
 };
 
@@ -1585,10 +1598,10 @@ window.goMaterialView = function(view){
   originalGoMaterialView(view);
   if(view.level==='subjects'){
     const co = courses.find(c=>c.id===view.courseId);
-    gtag('event','course_viewed',{event_category:'Study Material', event_label: co?co.name:''});
+    gtag('event','course_viewed',{event_category:'Study Material', event_label: co?co.name:'', course_name: co?co.name:''});
   } else if(view.level==='folders'){
     const ctx = getMaterialContext();
-    gtag('event','subject_viewed',{event_category:'Study Material', event_label: ctx.subject, course: ctx.course});
+    gtag('event','subject_viewed',{event_category:'Study Material', event_label: ctx.subject, subject_name: ctx.subject, course: ctx.course});
   }
 };
 
@@ -2271,7 +2284,6 @@ function flushActiveTime(){
   if(minutes > 0 && typeof gtag !== 'undefined') {
     gtag('event', 'time_spent', {
       event_category: 'Engagement',
-      event_label: 'minutes',
       value: minutes
     });
   }
