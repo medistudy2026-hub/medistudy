@@ -623,7 +623,7 @@ function authErrMsg(code){
 // Send a one-time "Welcome to MediStudy" email via our email Cloudflare Worker.
 // Fire-and-forget: never blocks or breaks sign-up if it fails (no internet hiccup,
 // worker down, etc. should ever stop someone from actually creating their account).
-const WELCOME_EMAIL_WORKER_URL = 'https://medistudy-welcome-email.YOUR-SUBDOMAIN.workers.dev';
+const WELCOME_EMAIL_WORKER_URL = 'https://nameless-fire-27d5.medistudy2026.workers.dev';
 function sendWelcomeEmail(email, name){
   if(!email) return;
   try{
