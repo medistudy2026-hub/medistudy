@@ -620,6 +620,21 @@ function authErrMsg(code){
   };
   return map[code]||'Something went wrong. Please try again.';
 }
+// Send a one-time "Welcome to MediStudy" email via our email Cloudflare Worker.
+// Fire-and-forget: never blocks or breaks sign-up if it fails (no internet hiccup,
+// worker down, etc. should ever stop someone from actually creating their account).
+const WELCOME_EMAIL_WORKER_URL = 'https://medistudy-welcome-email.YOUR-SUBDOMAIN.workers.dev';
+function sendWelcomeEmail(email, name){
+  if(!email) return;
+  try{
+    fetch(WELCOME_EMAIL_WORKER_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ email, name: name || 'Student' })
+    }).catch(e=>console.warn('Welcome email failed silently:', e));
+  }catch(e){ console.warn('Welcome email failed silently:', e); }
+}
+
 function doEmailSignIn(){
   const email=document.getElementById('li-email').value.trim();
   const pass=document.getElementById('li-password').value;
@@ -650,6 +665,7 @@ function doEmailSignUp(){
         gtag('event','sign_up',{method:'email'});
         userProfile.name=name;
         localStorage.setItem('ms_profile',JSON.stringify(userProfile));
+        sendWelcomeEmail(email, name);
         closeLoginModal();
       });
     })
@@ -665,6 +681,7 @@ function doGoogleSignIn(){
     .then((result)=>{
       const isNew = result.additionalUserInfo && result.additionalUserInfo.isNewUser;
       gtag('event', isNew ? 'sign_up' : 'login', {method:'google'});
+      if(isNew) sendWelcomeEmail(result.user.email, result.user.displayName);
       closeLoginModal();
     })
     .catch(e=>{showAuthError('google-err',authErrMsg(e.code));})
