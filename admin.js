@@ -31,9 +31,9 @@ function showPanel(){
     return;
   }
   if(adminRole==='editor'){
-    // Limited view: Structure, Notes, Videos, Manage, MCQ only — no Announce/Essentials/Students/Firebase
+    // Limited view: Structure, Notes, Videos, Manage, MCQ, Announce, Feedback, Dashboard — no Essentials/Students/Firebase
     document.querySelectorAll('.atab').forEach(t=>t.style.display='none');
-    ['atab-structure','atab-notes','atab-videos','atab-manage','atab-mcq'].forEach(id=>{document.getElementById(id).style.display='';});
+    ['atab-structure','atab-notes','atab-videos','atab-manage','atab-mcq','atab-announce','atab-feedback','atab-dashboard'].forEach(id=>{document.getElementById(id).style.display='';});
     populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();
     switchATab('structure', document.getElementById('atab-structure'));
     return;
@@ -513,6 +513,95 @@ function deleteManualQ(i){
   _manualQs.splice(i,1);
   renderManualQList();
 }
+
+// ── Bulk paste & auto-fill ──
+function parseBulkMCQs(){
+  const raw=document.getElementById('mq-bulk-paste').value;
+  if(!raw||!raw.trim()){alert('Paste some MCQs first.');return;}
+
+  // Split into per-question blocks: prefer '---' style separator lines
+  let blocks=raw.split(/^[ \t]*[-=_]{3,}[ \t]*$/m).map(b=>b.trim()).filter(b=>b.length);
+  if(blocks.length<2){
+    // No separators found — fall back to splitting at each numbered question start
+    const lines=raw.split('\n');
+    const idxs=[];
+    lines.forEach((l,i)=>{ if(/^\s*(?:Q(?:uestion)?\.?\s*)?\d{1,3}[.)]\s+\S/i.test(l)) idxs.push(i); });
+    blocks = idxs.length>1
+      ? idxs.map((start,k)=>lines.slice(start, k+1<idxs.length?idxs[k+1]:lines.length).join('\n').trim())
+      : [raw.trim()];
+  }
+
+  const optRe=/^([A-Da-d])[.)\:]\s*(.+)$/;
+  const ansRe=/^(?:correct\s*)?answ?e?r\s*[:\-]?\s*([A-Da-d])\b\s*(?:[—\-–:]\s*(.*))?$/i;
+  let added=0, skipped=[];
+
+  blocks.forEach((block,bi)=>{
+    const lines=block.split('\n').map(l=>l.trim()).filter(l=>l.length);
+    if(!lines.length)return;
+
+    const optIdx={};
+    let firstOptLine=-1;
+    lines.forEach((l,i)=>{
+      const m=l.match(optRe);
+      if(m){
+        const letter=m[1].toUpperCase();
+        if(!(letter in optIdx)){ optIdx[letter]=i; if(firstOptLine===-1)firstOptLine=i; }
+      }
+    });
+    if(!('A' in optIdx)||!('B' in optIdx)||!('C' in optIdx)||!('D' in optIdx)){
+      skipped.push({num:bi+1, reason:'could not find all 4 options (A–D)', text:(lines[0]||'').slice(0,50)});
+      return;
+    }
+
+    const qLines=lines.slice(0,firstOptLine);
+    let qText=qLines.join(' ').replace(/^\s*(?:Q(?:uestion)?\.?\s*)?\d{1,3}[.)]\s*/i,'').trim();
+    if(!qText){
+      skipped.push({num:bi+1, reason:'no question text found', text:(lines[0]||'').slice(0,50)});
+      return;
+    }
+
+    const opts=['A','B','C','D'].map(l=>{
+      const m=lines[optIdx[l]].match(optRe);
+      return m?m[2].trim():'';
+    });
+    if(opts.some(o=>!o)){
+      skipped.push({num:bi+1, reason:'one or more options are empty', text:qText.slice(0,50)});
+      return;
+    }
+
+    let answerLetter=null, explanation='';
+    for(let i=firstOptLine;i<lines.length;i++){
+      const m=lines[i].match(ansRe);
+      if(m){
+        answerLetter=m[1].toUpperCase();
+        explanation=(m[2]||'').trim();
+        break;
+      }
+    }
+    if(!answerLetter){
+      skipped.push({num:bi+1, reason:'no "Answer: X" line found', text:qText.slice(0,50)});
+      return;
+    }
+
+    _manualQs.push({q:qText, options:opts, answer:{'A':0,'B':1,'C':2,'D':3}[answerLetter], explanation});
+    added++;
+  });
+
+  renderManualQList();
+  const statusEl=document.getElementById('mq-bulk-status');
+  statusEl.style.display='block';
+  if(added>0){
+    let msg=`✅ Added ${added} question${added!==1?'s':''} below — check them over, then Publish.`;
+    if(skipped.length)msg+=` ⚠️ Skipped ${skipped.length}: `+skipped.map(s=>`#${s.num} (${s.reason})`).join('; ')+'.';
+    statusEl.textContent=msg;
+    statusEl.style.color=skipped.length?'#f0b429':'#86efac';
+    document.getElementById('mq-bulk-paste').value='';
+  } else {
+    statusEl.textContent='⚠️ Could not parse any questions. Skipped: '+skipped.map(s=>`#${s.num} (${s.reason})`).join('; ')+'. Check the format and try again.';
+    statusEl.style.color='#e85d38';
+  }
+}
+
 
 function populateMCQSubjectDropdowns(){
   // Populate both AI and Manual course dropdowns

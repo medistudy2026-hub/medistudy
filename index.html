@@ -751,6 +751,27 @@
           </div>
           <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Add questions one by one. They'll be saved together as one set when you publish.</div>
 
+          <!-- Bulk paste & auto-fill -->
+          <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px;">
+            <div class="form-group">
+              <label>📋 PASTE & AUTO-FILL <span style="color:var(--muted);font-weight:400;">(paste a whole block of MCQs)</span></label>
+              <textarea id="mq-bulk-paste" placeholder="1. Question text?
+
+A. Option
+B. Option
+C. Option
+D. Option
+
+Answer: B — optional explanation
+
+---
+
+2. Next question..." style="height:130px;"></textarea>
+            </div>
+            <button class="submit-btn" onclick="parseBulkMCQs()" style="margin-top:4px;">🪄 Parse & Add All</button>
+            <div id="mq-bulk-status" style="font-size:12px;margin-top:8px;display:none;"></div>
+          </div>
+
           <!-- Add single question form -->
           <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px;">
             <div class="form-group">
