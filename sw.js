@@ -1,11 +1,28 @@
 // MediStudy Service Worker — sw.js
 // Works on GitHub Pages (/medistudy/) and any custom domain
-const CACHE_NAME = 'medistudy-shell-v2';
+const CACHE_NAME = 'medistudy-shell-v3';
 const SKIP_WAITING_MSG = 'SKIP_WAITING';
 
-// ── Install ──────────────────────────────────────────────────────────────────
+// Core app shell — cached upfront on install so offline mode works
+// from the very first load, not just after each file has been fetched once.
+const PRECACHE_URLS = [
+  './',
+  'index.html',
+  'style.css',
+  'core.js',
+  'features.js',
+  'admin.js',
+  'manifest.json'
+];
+
+// ── Install: pre-cache the app shell ────────────────────────────────────────
 self.addEventListener('install', e => {
-  e.waitUntil(self.skipWaiting());
+  e.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(PRECACHE_URLS))
+      .catch(err => console.error('MediStudy precache failed:', err))
+      .then(() => self.skipWaiting())
+  );
 });
 
 // ── Activate: delete old caches ──────────────────────────────────────────────
