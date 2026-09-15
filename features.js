@@ -289,19 +289,30 @@ async function _processRenderQueue(){
 }
 
 // Builds an invisible, selectable text layer over a rendered PDF page.
-// Positions each text run using only pdfjsLib.Util.transform (a core, always-available
-// utility), so this works regardless of which higher-level viewer APIs a given
-// PDF.js build does or doesn't expose. Pixel-perfect alignment isn't the goal —
-// the text is invisible — just correct reading order and roughly right position/size
-// so long-press selection and copy work naturally.
+// Does its own 2D matrix math (the exact formula PDF.js itself uses internally)
+// instead of calling into pdfjsLib, so it works no matter which helper
+// functions a given PDF.js CDN build does or doesn't expose. Pixel-perfect
+// alignment isn't the goal — the text is invisible — just correct reading
+// order and roughly right position/size so long-press selection and copy
+// work naturally, the same way it does in Google Drive's viewer.
+function _combine2dTransforms(t, e){
+  // Combines two PDF-style [a,b,c,d,e,f] affine matrices: applies "e" first, then "t"
+  return [
+    t[0]*e[0] + t[2]*e[1],
+    t[1]*e[0] + t[3]*e[1],
+    t[0]*e[2] + t[2]*e[3],
+    t[1]*e[2] + t[3]*e[3],
+    t[0]*e[4] + t[2]*e[5] + t[4],
+    t[1]*e[4] + t[3]*e[5] + t[5]
+  ];
+}
 function _buildTextLayerManually(textContent, viewport, container){
-  const Util = pdfjsLib.Util;
   for(const item of textContent.items){
     if(!item.str){
       if(item.hasEOL) container.appendChild(document.createElement('br'));
       continue;
     }
-    const tx = Util.transform(viewport.transform, item.transform);
+    const tx = _combine2dTransforms(viewport.transform, item.transform);
     let angle = Math.atan2(tx[1], tx[0]);
     const fontHeight = Math.hypot(tx[2], tx[3]) || 1;
     let left, top;
@@ -370,6 +381,7 @@ async function _renderSinglePage(pageNum){
       const textViewport = viewport.clone({scale: viewport.scale / _pdfQualityScale}); // matches canvas's CSS-displayed size exactly
       const textLayerDiv = document.createElement('div');
       textLayerDiv.className = 'textLayer';
+      if(location.search.includes('debugtext')) textLayerDiv.classList.add('textLayer-debug'); // visually reveals the layer for troubleshooting
       textLayerDiv.style.width = textViewport.width + 'px';
       textLayerDiv.style.height = textViewport.height + 'px';
       placeholder.appendChild(textLayerDiv);

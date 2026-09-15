@@ -161,6 +161,9 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 .textLayer span,.textLayer br{color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0% 0%;}
 .textLayer ::selection{background:rgba(0,120,255,.35);}
 .textLayer ::-moz-selection{background:rgba(0,120,255,.35);}
+/* Debug mode: add ?debugtext to the URL to see the text layer's words and boxes highlighted, for troubleshooting */
+.textLayer-debug{background:rgba(0,255,0,.08);}
+.textLayer-debug span{color:rgba(255,0,0,.85)!important;outline:1px solid rgba(255,0,0,.4);}
 .pdf-progress-bar{height:3px;background:var(--green);width:0%;transition:width .3s;position:absolute;top:0;left:0;right:0;}
 .pdf-nav-bar{background:var(--surface);border-top:1px solid var(--border);padding:0 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0;max-height:0;overflow:hidden;opacity:0;pointer-events:none;border-top-width:0;transition:max-height .25s ease,opacity .2s ease,padding .25s ease,border-top-width .25s ease;}
 .pdf-nav-bar.visible{max-height:60px;padding:8px 14px;opacity:1;pointer-events:auto;border-top-width:1px;}
