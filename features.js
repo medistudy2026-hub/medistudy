@@ -288,6 +288,42 @@ async function _processRenderQueue(){
   _pdfRenderBusy = false;
 }
 
+// Builds an invisible, selectable text layer over a rendered PDF page.
+// Positions each text run using only pdfjsLib.Util.transform (a core, always-available
+// utility), so this works regardless of which higher-level viewer APIs a given
+// PDF.js build does or doesn't expose. Pixel-perfect alignment isn't the goal —
+// the text is invisible — just correct reading order and roughly right position/size
+// so long-press selection and copy work naturally.
+function _buildTextLayerManually(textContent, viewport, container){
+  const Util = pdfjsLib.Util;
+  for(const item of textContent.items){
+    if(!item.str){
+      if(item.hasEOL) container.appendChild(document.createElement('br'));
+      continue;
+    }
+    const tx = Util.transform(viewport.transform, item.transform);
+    let angle = Math.atan2(tx[1], tx[0]);
+    const fontHeight = Math.hypot(tx[2], tx[3]) || 1;
+    let left, top;
+    if(angle === 0){
+      left = tx[4];
+      top = tx[5] - fontHeight;
+    } else {
+      left = tx[4] + fontHeight * Math.sin(angle);
+      top = tx[5] - fontHeight * Math.cos(angle);
+    }
+    const span = document.createElement('span');
+    span.textContent = item.str;
+    span.style.left = left + 'px';
+    span.style.top = top + 'px';
+    span.style.fontSize = fontHeight + 'px';
+    span.style.fontFamily = 'sans-serif';
+    if(angle !== 0) span.style.transform = `rotate(${angle}rad)`;
+    container.appendChild(span);
+    if(item.hasEOL) container.appendChild(document.createElement('br'));
+  }
+}
+
 async function _renderSinglePage(pageNum){
   const container = document.getElementById('pdf-canvas-container');
   const placeholder = document.getElementById(`pdf-page-${pageNum}`);
@@ -328,21 +364,17 @@ async function _renderSinglePage(pageNum){
 
     // Invisible selectable text layer on top of the canvas — lets students
     // select and copy text (search on Google, etc.) same as Google Drive's viewer.
+    // Built manually from raw text positions so it doesn't depend on any
+    // higher-level PDF.js viewer API that may or may not be in this CDN build.
     try{
-      if(typeof pdfjsLib.renderTextLayer === 'function'){
-        const textViewport = viewport.clone({scale: viewport.scale / _pdfQualityScale}); // matches canvas's CSS-displayed size exactly
-        const textLayerDiv = document.createElement('div');
-        textLayerDiv.className = 'textLayer';
-        textLayerDiv.style.width = textViewport.width + 'px';
-        textLayerDiv.style.height = textViewport.height + 'px';
-        placeholder.appendChild(textLayerDiv);
-        const textContent = await page.getTextContent();
-        await pdfjsLib.renderTextLayer({
-          textContentSource: textContent,
-          container: textLayerDiv,
-          viewport: textViewport
-        }).promise;
-      }
+      const textViewport = viewport.clone({scale: viewport.scale / _pdfQualityScale}); // matches canvas's CSS-displayed size exactly
+      const textLayerDiv = document.createElement('div');
+      textLayerDiv.className = 'textLayer';
+      textLayerDiv.style.width = textViewport.width + 'px';
+      textLayerDiv.style.height = textViewport.height + 'px';
+      placeholder.appendChild(textLayerDiv);
+      const textContent = await page.getTextContent();
+      _buildTextLayerManually(textContent, textViewport, textLayerDiv);
     }catch(textErr){
       console.warn('[PDF] Text layer failed for page', pageNum, '— page still viewable, just not selectable:', textErr);
     }
