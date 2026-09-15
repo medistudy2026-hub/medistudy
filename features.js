@@ -313,6 +313,7 @@ async function _renderSinglePage(pageNum){
     canvas.style.width  = cssW + 'px';
     canvas.style.height = cssH + 'px';
     canvas.style.display = 'block';
+    canvas.style.margin = '0'; // avoid stray CSS margins throwing off the text layer overlay below
 
     // Clear placeholder and insert rendered canvas
     placeholder.innerHTML = '';
@@ -324,6 +325,27 @@ async function _renderSinglePage(pageNum){
       viewport,
       annotationMode: 2
     }).promise;
+
+    // Invisible selectable text layer on top of the canvas — lets students
+    // select and copy text (search on Google, etc.) same as Google Drive's viewer.
+    try{
+      if(typeof pdfjsLib.renderTextLayer === 'function'){
+        const textViewport = viewport.clone({scale: viewport.scale / _pdfQualityScale}); // matches canvas's CSS-displayed size exactly
+        const textLayerDiv = document.createElement('div');
+        textLayerDiv.className = 'textLayer';
+        textLayerDiv.style.width = textViewport.width + 'px';
+        textLayerDiv.style.height = textViewport.height + 'px';
+        placeholder.appendChild(textLayerDiv);
+        const textContent = await page.getTextContent();
+        await pdfjsLib.renderTextLayer({
+          textContentSource: textContent,
+          container: textLayerDiv,
+          viewport: textViewport
+        }).promise;
+      }
+    }catch(textErr){
+      console.warn('[PDF] Text layer failed for page', pageNum, '— page still viewable, just not selectable:', textErr);
+    }
 
     _pdfRenderedPages.add(pageNum);
   }catch(e){
