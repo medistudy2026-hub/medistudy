@@ -172,12 +172,27 @@ let _pdfQualityScale = 2.0;  // global quality scale set on init
 let _pdfVw = 400;            // global viewport width set on init
 let _pdfScrollTimer = null;  // debounce timer for scroll
 
+// ── In-document search state ──
+let _pdfPageTextCache = {};      // pageNum -> textContent (reused by both search indexing and text-layer rendering)
+let _pdfPageTextIndex = {};      // pageNum -> lowercase full text of that page, for fast "does this page match" checks
+let _pdfSearchIndexBuilt = false;
+let _pdfSearchQuery = '';
+let _pdfSearchMatchPages = [];   // page numbers (in order) that contain the current query
+let _pdfSearchCurrentPageIdx = -1;
+let _pdfSearchDebounceTimer = null;
+
 async function _renderAllPages(preservePage){
   const container = document.getElementById('pdf-canvas-container');
   container.innerHTML = '';
   _pdfRenderedPages.clear();
   _pdfRenderQueue = [];
   _pdfRenderBusy = false;
+
+  // Reset search — a new/reopened document needs a fresh index
+  if(typeof closePdfSearch === 'function' && document.getElementById('pdf-search-bar')) closePdfSearch();
+  _pdfPageTextCache = {};
+  _pdfPageTextIndex = {};
+  _pdfSearchIndexBuilt = false;
 
   const dpr = window.devicePixelRatio || 1;
   // Adaptive quality: budget phones (low-DPI screens) get 2x — still sharp on their screen
@@ -385,7 +400,8 @@ async function _renderSinglePage(pageNum){
       textLayerDiv.style.width = textViewport.width + 'px';
       textLayerDiv.style.height = textViewport.height + 'px';
       placeholder.appendChild(textLayerDiv);
-      const textContent = await page.getTextContent();
+      const textContent = _pdfPageTextCache[pageNum] || await page.getTextContent();
+      _pdfPageTextCache[pageNum] = textContent;
       _buildTextLayerManually(textContent, textViewport, textLayerDiv);
     }catch(textErr){
       console.warn('[PDF] Text layer failed for page', pageNum, '— page still viewable, just not selectable:', textErr);
@@ -464,6 +480,139 @@ function _updateNavBar(){
   document.getElementById('pdf-page-info').textContent=`Page ${pdfCurrentPage} / ${pdfTotalPages}`;
   document.getElementById('pdf-prev-btn').disabled=pdfCurrentPage<=1;
   document.getElementById('pdf-next-btn').disabled=pdfCurrentPage>=pdfTotalPages;
+}
+
+// ═══════════════ IN-DOCUMENT SEARCH (like Google Drive's PDF search) ═══════════════
+function togglePdfSearch(){
+  const bar = document.getElementById('pdf-search-bar');
+  const btn = document.getElementById('pdf-search-btn');
+  const isOpen = bar.style.display === 'flex';
+  if(isOpen){
+    closePdfSearch();
+  } else {
+    bar.style.display = 'flex';
+    btn.classList.add('active');
+    document.getElementById('pdf-search-input').focus();
+  }
+}
+
+function closePdfSearch(){
+  const bar = document.getElementById('pdf-search-bar');
+  const btn = document.getElementById('pdf-search-btn');
+  if(bar) bar.style.display = 'none';
+  if(btn) btn.classList.remove('active');
+  const input = document.getElementById('pdf-search-input');
+  if(input) input.value = '';
+  _pdfClearHighlights();
+  _pdfSearchMatchPages = [];
+  _pdfSearchCurrentPageIdx = -1;
+  _pdfSearchQuery = '';
+  const countEl = document.getElementById('pdf-search-count');
+  if(countEl) countEl.textContent = '0 / 0';
+}
+
+function _pdfClearHighlights(){
+  document.querySelectorAll('#pdf-canvas-container .pdf-search-hit, #pdf-canvas-container .pdf-search-hit-active')
+    .forEach(s => s.classList.remove('pdf-search-hit','pdf-search-hit-active'));
+}
+
+function _pdfSearchDebounced(){
+  clearTimeout(_pdfSearchDebounceTimer);
+  _pdfSearchDebounceTimer = setTimeout(() => {
+    const q = document.getElementById('pdf-search-input').value.trim();
+    _pdfRunSearch(q);
+  }, 350);
+}
+
+// Fetches and caches every page's plain text once per document, so repeat
+// searches in the same PDF are instant. Only runs on the first search.
+async function _pdfBuildSearchIndex(){
+  for(let p = 1; p <= pdfTotalPages; p++){
+    try{
+      let tc = _pdfPageTextCache[p];
+      if(!tc){
+        const page = await pdfJsDoc.getPage(p);
+        tc = await page.getTextContent();
+        _pdfPageTextCache[p] = tc;
+      }
+      _pdfPageTextIndex[p] = tc.items.map(it => it.str).join(' ').toLowerCase();
+    }catch(e){
+      console.warn('[PDF Search] Failed to index page', p, e);
+      _pdfPageTextIndex[p] = '';
+    }
+  }
+  _pdfSearchIndexBuilt = true;
+}
+
+async function _pdfRunSearch(query){
+  _pdfClearHighlights();
+  const countEl = document.getElementById('pdf-search-count');
+  if(!query){
+    _pdfSearchMatchPages = [];
+    _pdfSearchCurrentPageIdx = -1;
+    _pdfSearchQuery = '';
+    if(countEl) countEl.textContent = '0 / 0';
+    return;
+  }
+  _pdfSearchQuery = query.toLowerCase();
+  if(countEl) countEl.textContent = '...';
+  if(!_pdfSearchIndexBuilt) await _pdfBuildSearchIndex();
+
+  _pdfSearchMatchPages = [];
+  for(let p = 1; p <= pdfTotalPages; p++){
+    if((_pdfPageTextIndex[p] || '').includes(_pdfSearchQuery)) _pdfSearchMatchPages.push(p);
+  }
+  if(_pdfSearchMatchPages.length === 0){
+    if(countEl) countEl.textContent = '0 / 0';
+    _pdfSearchCurrentPageIdx = -1;
+    return;
+  }
+  // Jump to the nearest match at/after the page currently being read; wrap to the first if none
+  let startIdx = _pdfSearchMatchPages.findIndex(p => p >= pdfCurrentPage);
+  if(startIdx === -1) startIdx = 0;
+  await _pdfGoToSearchMatch(startIdx);
+}
+
+async function _pdfEnsurePageRendered(pageNum){
+  if(_pdfRenderedPages.has(pageNum)) return;
+  await _renderSinglePage(pageNum);
+}
+
+async function _pdfGoToSearchMatch(idx){
+  if(idx < 0 || idx >= _pdfSearchMatchPages.length) return;
+  _pdfClearHighlights();
+  _pdfSearchCurrentPageIdx = idx;
+  const page = _pdfSearchMatchPages[idx];
+  const countEl = document.getElementById('pdf-search-count');
+  if(countEl) countEl.textContent = `${idx+1} / ${_pdfSearchMatchPages.length}`;
+
+  await _pdfEnsurePageRendered(page);
+  const placeholder = document.getElementById(`pdf-page-${page}`);
+  if(!placeholder) return;
+  const textLayerDiv = placeholder.querySelector('.textLayer');
+  let matchingSpans = [];
+  if(textLayerDiv){
+    matchingSpans = Array.from(textLayerDiv.querySelectorAll('span'))
+      .filter(s => s.textContent.toLowerCase().includes(_pdfSearchQuery));
+  }
+  matchingSpans.forEach((s,i) => s.classList.add(i===0 ? 'pdf-search-hit-active' : 'pdf-search-hit'));
+
+  const scrollTarget = matchingSpans[0] || placeholder;
+  scrollTarget.scrollIntoView({behavior:'smooth', block:'center'});
+
+  pdfCurrentPage = page;
+  _updateNavBar();
+  _lazyRenderAround(page); // keep neighboring pages loaded too
+}
+
+function pdfSearchNext(){
+  if(_pdfSearchMatchPages.length === 0) return;
+  _pdfGoToSearchMatch((_pdfSearchCurrentPageIdx + 1) % _pdfSearchMatchPages.length);
+}
+
+function pdfSearchPrev(){
+  if(_pdfSearchMatchPages.length === 0) return;
+  _pdfGoToSearchMatch((_pdfSearchCurrentPageIdx - 1 + _pdfSearchMatchPages.length) % _pdfSearchMatchPages.length);
 }
 
 // Download a PDF from Google Drive with retry (handles virus-scan warning page)

@@ -468,7 +468,15 @@
     <div class="pdf-progress-bar" id="pdf-progress-bar"></div>
     <button class="pdf-close-btn" onclick="closePDF()">✕ Close</button>
     <span class="pdf-title" id="pdf-title"></span>
+    <button class="pdf-search-btn" id="pdf-search-btn" onclick="togglePdfSearch()" title="Search in document">🔍</button>
     <button class="pdf-save-bar-btn" id="pdf-save-bar-btn" onclick="toggleSaveFromViewer()">💾 Save Offline</button>
+  </div>
+  <div class="pdf-search-bar" id="pdf-search-bar" style="display:none;">
+    <input type="text" id="pdf-search-input" placeholder="Search in document..." oninput="_pdfSearchDebounced()" onkeydown="if(event.key==='Enter'){event.shiftKey?pdfSearchPrev():pdfSearchNext();}">
+    <span id="pdf-search-count">0 / 0</span>
+    <button onclick="pdfSearchPrev()" title="Previous match">◀</button>
+    <button onclick="pdfSearchNext()" title="Next match">▶</button>
+    <button onclick="closePdfSearch()" title="Close search">✕</button>
   </div>
   <div class="pdf-loading" id="pdf-loading" style="display:none;">
     <div class="pdf-loading-spinner"></div>

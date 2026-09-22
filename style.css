@@ -149,6 +149,12 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 .pdf-close-btn{padding:6px 14px;border-radius:8px;background:var(--accent2);color:#fff;border:none;cursor:pointer;font-size:12px;font-weight:600;}
 .pdf-save-bar-btn{padding:6px 14px;border-radius:8px;background:var(--green);color:#052e16;border:none;cursor:pointer;font-size:12px;font-weight:700;}
 .pdf-save-bar-btn.saved-bar{background:#0e3a1c;color:var(--green);border:1px solid var(--green);}
+.pdf-search-btn{padding:6px 10px;border-radius:8px;background:var(--card);color:var(--text);border:1px solid var(--border);cursor:pointer;font-size:14px;}
+.pdf-search-btn.active{background:var(--accent);color:#000;border-color:var(--accent);}
+.pdf-search-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:8px 14px;display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.pdf-search-bar input{flex:1;min-width:0;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;}
+.pdf-search-bar span{font-size:12px;color:var(--muted);white-space:nowrap;min-width:52px;text-align:center;}
+.pdf-search-bar button{padding:6px 10px;border-radius:8px;background:var(--card);color:var(--text);border:1px solid var(--border);cursor:pointer;font-size:13px;flex-shrink:0;}
 .pdf-frame{flex:1;border:none;width:100%;background:#fff;}
 .pdf-no-embed{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;}
 .pdf-no-embed p{font-size:13px;color:var(--muted);line-height:1.7;}
@@ -164,6 +170,9 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 /* Debug mode: add ?debugtext to the URL to see the text layer's words and boxes highlighted, for troubleshooting */
 .textLayer-debug{background:rgba(0,255,0,.08);}
 .textLayer-debug span{color:rgba(255,0,0,.85)!important;outline:1px solid rgba(255,0,0,.4);}
+/* Search match highlights — colored box behind the still-invisible text, roughly over the printed word */
+.textLayer span.pdf-search-hit{background:rgba(255,224,0,.55);border-radius:2px;}
+.textLayer span.pdf-search-hit-active{background:rgba(255,140,0,.75);}
 .pdf-progress-bar{height:3px;background:var(--green);width:0%;transition:width .3s;position:absolute;top:0;left:0;right:0;}
 .pdf-nav-bar{background:var(--surface);border-top:1px solid var(--border);padding:0 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-shrink:0;max-height:0;overflow:hidden;opacity:0;pointer-events:none;border-top-width:0;transition:max-height .25s ease,opacity .2s ease,padding .25s ease,border-top-width .25s ease;}
 .pdf-nav-bar.visible{max-height:60px;padding:8px 14px;opacity:1;pointer-events:auto;border-top-width:1px;}
