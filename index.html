@@ -874,6 +874,18 @@ Answer: B — optional explanation
         <button class="submit-btn" id="fb-push-btn" onclick="pushToFirebase()" style="background:var(--green);color:#052e16;">⬆️ Push My Data to Firebase</button>
         <button class="submit-btn" id="fb-pull-btn" onclick="pullFromFirebase()" style="background:var(--purple);">⬇️ Pull Latest Data from Firebase</button>
         <div class="success-msg" id="fb-success"></div>
+
+        <div style="background:#1a1006;border:1px solid var(--accent);border-radius:10px;padding:14px;margin-top:16px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px;color:var(--accent);">🚚 Migrate to Scoped Sync</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:10px;">
+            One-time setup step. Copies your current data into a new, course-scoped structure
+            (<code>medistudy_courses</code> + <code>medistudy_content/&lt;courseId&gt;</code>) so students will
+            eventually only sync their own course. This is a pure <strong>copy</strong> — your existing
+            <code>medistudy</code> node is left untouched, and nothing changes for students yet.
+          </div>
+          <button class="submit-btn" id="fb-migrate-btn" onclick="migrateToScopedSync()" style="background:var(--accent);color:#000;">🚚 Migrate to Scoped Sync</button>
+          <div id="fb-migrate-status" style="font-size:12px;margin-top:8px;line-height:1.6;"></div>
+        </div>
       </div>
     </div>
   </div>

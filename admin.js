@@ -363,6 +363,83 @@ function saveGeminiKey(){
   if(saved) window.RUNTIME_GROQ_KEY = saved;
 })();
 
+// ═══════════════ COURSE-SCOPED SYNC MIGRATION (one-time, pure copy) ═══════════════
+// Copies the current monolithic 'medistudy' node into medistudy_courses +
+// medistudy_content/<courseId>/{subjects,folders,notes,videos}. Does NOT touch
+// the old node, and does NOT change what students sync yet — that's a
+// separate later step once this new structure is confirmed correct.
+async function migrateToScopedSync(){
+  const statusEl = document.getElementById('fb-migrate-status');
+  const btn = document.getElementById('fb-migrate-btn');
+  if(!fbConnected || !db){
+    statusEl.innerHTML = '<span style="color:#e85d38">❌ Not connected to Firebase. Connect first.</span>';
+    return;
+  }
+  if(!confirm('This reads your current data and copies it into the new course-scoped structure. Your existing "medistudy" node stays untouched, and nothing changes for students yet. Continue?')) return;
+
+  btn.disabled = true;
+  statusEl.innerHTML = '⏳ Reading current data...';
+
+  try{
+    const snap = await db.ref('medistudy').once('value');
+    const d = snap.val();
+    if(!d){
+      statusEl.innerHTML = '<span style="color:#e85d38">❌ No data found at the medistudy node.</span>';
+      btn.disabled = false;
+      return;
+    }
+    const srcCourses  = d.courses  || [];
+    const srcSubjects = d.subjects || [];
+    const srcFolders  = d.folders  || [];
+    const srcNotes    = d.notes    || [];
+    const srcVideos   = d.videos   || [];
+
+    if(srcCourses.length === 0){
+      statusEl.innerHTML = '<span style="color:#e85d38">❌ No courses found — nothing to migrate.</span>';
+      btn.disabled = false;
+      return;
+    }
+
+    statusEl.innerHTML = '⏳ Writing course-scoped content...';
+    const updates = {};
+    updates['medistudy_courses'] = srcCourses;
+    let subjectCount=0, folderCount=0, noteCount=0, videoCount=0;
+
+    srcCourses.forEach(course=>{
+      const cid = course.id;
+      const cSubjects = srcSubjects.filter(s=>s.courseId===cid);
+      const cFolders  = srcFolders.filter(f=>f.courseId===cid);
+      const cNotes    = srcNotes.filter(n=>n.courseId===cid);
+      const cVideos   = srcVideos.filter(v=>v.courseId===cid);
+      updates[`medistudy_content/${cid}/subjects`] = cSubjects;
+      updates[`medistudy_content/${cid}/folders`]  = cFolders;
+      updates[`medistudy_content/${cid}/notes`]    = cNotes;
+      updates[`medistudy_content/${cid}/videos`]   = cVideos;
+      subjectCount += cSubjects.length;
+      folderCount  += cFolders.length;
+      noteCount    += cNotes.length;
+      videoCount   += cVideos.length;
+    });
+
+    // Data-hygiene check: anything whose courseId doesn't match a real course won't have landed anywhere above
+    const knownIds = new Set(srcCourses.map(c=>c.id));
+    const unassigned = [...srcSubjects, ...srcFolders, ...srcNotes, ...srcVideos]
+      .filter(x => !knownIds.has(x.courseId)).length;
+
+    await db.ref().update(updates);
+
+    let msg = `✅ Migration complete!<br>${srcCourses.length} course${srcCourses.length!==1?'s':''}, ${subjectCount} subjects, ${folderCount} folders, ${noteCount} notes, ${videoCount} videos copied into medistudy_content.`;
+    if(unassigned>0){
+      msg += `<br><span style="color:var(--accent)">⚠️ ${unassigned} item(s) had a courseId that didn't match any course and were skipped — worth checking in Firebase Console.</span>`;
+    }
+    msg += `<br><br>Your original <strong>medistudy</strong> node is untouched — the app is still using it, nothing has changed for students. Go check <strong>medistudy_courses</strong> and <strong>medistudy_content</strong> in Firebase Console to confirm the numbers above look right.`;
+    statusEl.innerHTML = msg;
+  }catch(e){
+    statusEl.innerHTML = '<span style="color:#e85d38">❌ Migration failed: '+e.message+'</span>';
+  }
+  btn.disabled = false;
+}
+
 document.getElementById('admin-modal').addEventListener('click',function(e){if(e.target===this)closeAdmin();});
 
 function postAnnouncement(){
