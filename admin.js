@@ -7,8 +7,17 @@ let ADMIN_ACTIVE_UNIVERSITY_ID = localStorage.getItem('ms4_admin_uni') || DEFAUL
 function populateAdminUniversitySelect(){
   const sel=document.getElementById('admin-university-sel');
   if(!sel) return;
-  sel.innerHTML = universities.map(u=>`<option value="${u.id}">${escapeHTML(u.name)}</option>`).join('');
-  sel.value = universities.some(u=>u.id===ADMIN_ACTIVE_UNIVERSITY_ID) ? ADMIN_ACTIVE_UNIVERSITY_ID : DEFAULT_UNIVERSITY_ID;
+  function render(){
+    sel.innerHTML = universities.map(u=>`<option value="${u.id}">${escapeHTML(u.name)}</option>`).join('');
+    sel.value = universities.some(u=>u.id===ADMIN_ACTIVE_UNIVERSITY_ID) ? ADMIN_ACTIVE_UNIVERSITY_ID : DEFAULT_UNIVERSITY_ID;
+  }
+  if(universities.length || !db){ render(); return; }
+  sel.innerHTML = '<option value="">Loading...</option>';
+  db.ref('medistudy_universities').once('value').then(snap=>{
+    const d=snap.val();
+    if(d){ universities=d; localStorage.setItem('ms4_universities', JSON.stringify(universities)); }
+    render();
+  }).catch(render);
 }
 function switchAdminUniversity(){
   const sel=document.getElementById('admin-university-sel');
@@ -64,6 +73,7 @@ function showPanel(){
   document.getElementById('admin-signedin-warning').style.display = currentUser ? 'none' : 'block';
   if(adminRole==='sponsor'){
     // Limited view: only Announcements + Student Essentials, nothing else
+    document.getElementById('admin-university-bar').style.display='none';
     document.querySelectorAll('.atab').forEach(t=>t.style.display='none');
     document.getElementById('atab-announce').style.display='';
     document.getElementById('atab-essentials').style.display='';
@@ -72,6 +82,7 @@ function showPanel(){
   }
   if(adminRole==='editor'){
     // Limited view: Structure, Notes, Videos, Manage, MCQ, Announce, Feedback, Dashboard — no Essentials/Students/Firebase
+    document.getElementById('admin-university-bar').style.display='';
     document.querySelectorAll('.atab').forEach(t=>t.style.display='none');
     ['atab-structure','atab-notes','atab-videos','atab-manage','atab-mcq','atab-announce','atab-feedback','atab-dashboard'].forEach(id=>{document.getElementById(id).style.display='';});
     populateAdminUniversitySelect();
@@ -80,6 +91,7 @@ function showPanel(){
     switchATab('structure', document.getElementById('atab-structure'));
     return;
   }
+  document.getElementById('admin-university-bar').style.display='';
   document.querySelectorAll('.atab').forEach(t=>t.style.display='');
   populateAdminUniversitySelect();
   populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();updateFBStatus();

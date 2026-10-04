@@ -579,11 +579,24 @@ function populateProfileCourseOptions(universityId, selectedCourseId){
 function showProfileEdit(){
   document.getElementById('profile-name-inp').value = userProfile.name;
   const uniSel=document.getElementById('profile-university-inp');
-  uniSel.innerHTML='<option value="">Select your university...</option>'+universities.map(u=>`<option value="${u.id}">${escapeHTML(u.name)}</option>`).join('');
-  const currentUni = userProfile.university || DEFAULT_UNIVERSITY_ID;
-  uniSel.value = universities.some(u=>u.id===currentUni) ? currentUni : '';
   uniSel.onchange = ()=>populateProfileCourseOptions(uniSel.value, '');
-  populateProfileCourseOptions(uniSel.value, userProfile.course);
+  function renderUniOptions(){
+    uniSel.innerHTML='<option value="">Select your university...</option>'+universities.map(u=>`<option value="${u.id}">${escapeHTML(u.name)}</option>`).join('');
+    const currentUni = userProfile.university || DEFAULT_UNIVERSITY_ID;
+    uniSel.value = universities.some(u=>u.id===currentUni) ? currentUni : '';
+    populateProfileCourseOptions(uniSel.value, userProfile.course);
+  }
+  if(universities.length || !db){
+    renderUniOptions();
+  } else {
+    // Live listener hasn't delivered the list yet — don't just show an empty dropdown, fetch it once directly
+    uniSel.innerHTML='<option value="">Loading universities...</option>';
+    db.ref('medistudy_universities').once('value').then(snap=>{
+      const d=snap.val();
+      if(d){ universities=d; localStorage.setItem('ms4_universities', JSON.stringify(universities)); }
+      renderUniOptions();
+    }).catch(renderUniOptions);
+  }
   document.getElementById('profile-gender-inp').value = userProfile.gender||'';
   document.getElementById('profile-age-inp').value = userProfile.age||'';
   document.getElementById('profile-loggedout-view').style.display='none';

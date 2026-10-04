@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediStudy — MBBS Companion</title>
+<script>
+// OFFLINE BOOT — runs before anything else
+// If offline, try to serve cached version from Cache API
+(function(){
+  if(navigator.onLine) return; // Online — nothing to do
+  if(!('caches' in window)) return; // No Cache API — nothing to do
+  // Check if app shell is cached, inject if current page failed to load
+  window.addEventListener('DOMContentLoaded', function(){
+    setTimeout(function(){
+      // If page-home exists, app loaded fine even offline
+      if(document.getElementById('page-home')) return;
+      // App failed to load — try cache
+      var urls = [location.href, location.origin+'/', location.origin+'/index.html'];
+      caches.open('medistudy-shell-v2').then(function(cache){
+        var tryNext = function(i){
+          if(i >= urls.length) return;
+          cache.match(urls[i]).then(function(resp){
+            if(resp){ resp.text().then(function(html){
+              document.open(); document.write(html); document.close();
+            });}else{ tryNext(i+1); }
+          });
+        };
+        tryNext(0);
+      }).catch(function(){});
+    }, 1000);
+  });
+})();
+</script>
+<link rel="stylesheet" href="style.css">
+
+  <!-- Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-0CT6SZ4DD1"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-0CT6SZ4DD1');
+  </script>
+  <!-- Fonts load async — never blocks offline use -->
+  <script>
+    if(navigator.onLine){
+      var fl=document.createElement('link');
+      fl.rel='stylesheet';fl.media='print';
+      fl.href='https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,600;0,900;1,300&family=DM+Sans:wght@300;400;500;600&display=swap';
+      fl.onload=function(){fl.media='all';};
+      document.head.appendChild(fl);
+    }
+  </script>
+
+  <!-- PWA Support -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#e8a838">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MediStudy">
+  <link rel="apple-touch-icon" href="https://img.icons8.com/fluency/96/stethoscope.png">
+  <!-- PDF.js for reliable cross-platform PDF rendering -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+<nav>
+  <div class="nav-brand" id="nav-brand" onclick="goPage('home')">Medi<span>Study</span></div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="goPage('home')">🏠</button>
+    <button class="nav-tab" onclick="goPage('search')">🔍</button>
+    <button class="nav-tab" onclick="goPage('tutor')">🤖 AI</button>
+    <button class="nav-tab" onclick="goPage('material')">📚</button>
+    <button class="nav-tab" onclick="goPage('videos')">🎥</button>
+    <button class="nav-tab" onclick="goPage('saved')">💾</button>
+    <button class="nav-tab" onclick="goPage('planner')">📅</button>
+    <button class="nav-tab" onclick="goPage('leaderboard')">🏆</button>
+    <button class="nav-tab" onclick="goPage('quicknotes')">📝</button>
+    <button class="nav-tab" onclick="goPage('progress')">📊</button>
+    <button class="nav-tab" onclick="goPage('chat')">💬</button>
+    <button class="nav-tab" onclick="goPage('quiz')">🧠</button>
+    <button class="nav-tab" onclick="goPage('about')">👤</button>
+    <button class="nav-tab" onclick="goPage('essentials')">🎓</button>  </div>
+  <div class="nav-right">
+    <button class="theme-btn" id="theme-btn" onclick="toggleTheme()">🌙</button>
+    <button class="profile-avatar-btn" id="profile-avatar-btn" onclick="openProfile()" title="My Profile">👤</button>
+  </div>
+</nav>
+
+<!-- ANNOUNCEMENT BANNER -->
+<div id="ann-banner" style="display:none;margin:8px 12px 0;border-radius:10px;padding:10px 14px;font-size:13px;line-height:1.5;position:relative;">
+  <div style="font-weight:700;margin-bottom:2px;" id="ann-banner-title"></div>
+  <div id="ann-banner-msg" style="font-size:12px;opacity:0.9;"></div>
+  <button onclick="dismissAnnouncement()" style="position:absolute;top:8px;right:10px;background:none;border:none;font-size:16px;cursor:pointer;opacity:0.7;color:inherit;">✕</button>
+</div>
+<div class="profile-modal-overlay" id="profile-modal-overlay" onclick="if(event.target===this)closeProfile()">
+  <div class="profile-modal">
+    <div class="profile-avatar-big" id="profile-avatar-big">👤</div>
+    <div class="profile-name-display" id="profile-name-display">Set your name</div>
+    <div class="profile-course-display" id="profile-course-display">Tap Edit to set up your profile</div>
+
+    <!-- Logged-out view -->
+    <div id="profile-loggedout-view">
+      <button class="profile-edit-btn" onclick="closeProfile();openLoginModal()" style="background:var(--accent);margin-bottom:6px;">🔐 Sign In / Create Account</button>
+      <button class="profile-close-btn" onclick="closeProfile()">Close</button>
+    </div>
+
+    <!-- Logged-in view -->
+    <div id="profile-view" style="display:none;">
+      <div id="profile-auth-email" style="font-size:11px;color:var(--muted);text-align:center;margin-bottom:10px;"></div>
+      <button class="profile-edit-btn" onclick="showProfileEdit()">✏️ Edit Profile</button>
+      <button class="profile-close-btn" onclick="doSignOut()" style="margin-top:6px;border-color:#e85d38;color:#e85d38;">🚪 Sign Out</button>
+      <button class="profile-close-btn" onclick="closeProfile()" style="margin-top:6px;">Close</button>
+    </div>
+
+    <div id="profile-edit-form" style="display:none;">
+      <div class="form-group" style="margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:5px;">YOUR NAME</label>
+        <input type="text" id="profile-name-inp" class="lb-input" placeholder="e.g. Ankit Sahu" style="margin-bottom:0;">
+      </div>
+      <div class="form-group" style="margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:5px;">UNIVERSITY</label>
+        <select id="profile-university-inp" class="lb-input" style="margin-bottom:0;">
+          <option value="">Select your university...</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:5px;">COURSE</label>
+        <select id="profile-course-inp" class="lb-input" style="margin-bottom:0;">
+          <option value="">Select your course...</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:5px;">GENDER (OPTIONAL)</label>
+        <select id="profile-gender-inp" class="lb-input" style="margin-bottom:0;">
+          <option value="">Prefer not to say</option>
+          <option value="Male">Male</option>
+          <option value="Female">Female</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:5px;">AGE (OPTIONAL)</label>
+        <input type="number" id="profile-age-inp" class="lb-input" placeholder="e.g. 20" min="15" max="60" style="margin-bottom:0;">
+      </div>
+      <button class="profile-edit-btn" onclick="saveProfile()">💾 Save Profile</button>
+      <button class="profile-close-btn" onclick="showProfileView()">Cancel</button>
+    </div>
+  </div>
+</div>
+<!-- HOME -->
+<div class="page active" id="page-home">
+  <div class="hero"><div class="hero-tag">MBBS COMPANION</div><h1>Study smarter,<br><em>not harder.</em></h1><p>Your all-in-one study app — built by an MBBS student, for MBBS students.</p></div>
+  <div id="home-fb-banner"></div>
+  <div class="home-grid">
+    <div class="home-card" onclick="goPage('search')"><span class="hc-icon">🔍</span><div class="hc-title">Search</div><div class="hc-desc">Find any note or video instantly</div><div class="hc-arrow">→</div></div>
+    <div class="home-card" onclick="goPage('tutor')"><span class="hc-icon">🧠</span><div class="hc-title">AI Tutor</div><div class="hc-desc">Ask any MBBS question</div><div class="hc-arrow">→</div></div>
+    <div class="home-card" onclick="goPage('material')"><span class="hc-icon">📚</span><div class="hc-title">Study Material</div><div class="hc-desc">Notes & videos by course and subject</div><div class="hc-arrow">→</div></div>
+    <div class="home-card" onclick="goPage('videos')"><span class="hc-icon">🎥</span><div class="hc-title">Videos</div><div class="hc-desc">All video lectures in one place</div><div class="hc-arrow">→</div></div>
+    <div class="home-card" onclick="goPage('quicknotes')"><span class="hc-icon">📝</span><div class="hc-title">Quick Notes</div><div class="hc-desc">Write your personal study notes</div><div class="hc-arrow">→</div></div>
+    <div class="home-card" onclick="goPage('progress')"><span class="hc-icon">📊</span><div class="hc-title">Progress</div><div class="hc-desc">Track topics done per subject</div><div class="hc-arrow">→</div></div>
+    <div class="home-card" onclick="goPage('chat')"><span class="hc-icon">💬</span><div class="hc-title">Batch Chat</div><div class="hc-desc">Chat with your batchmates live</div><div class="hc-arrow">→</div></div>
+    <div class="home-card" onclick="goPage('planner')"><span class="hc-icon">📅</span><div class="hc-title">Study Planner</div><div class="hc-desc">Exam countdown & daily goals</div><div class="hc-arrow">→</div></div>
+    <div class="home-card" onclick="goPage('essentials')"><span class="hc-icon">🎓</span><div class="hc-title">Student Essentials (Office)</div><div class="hc-desc">Registration, SIM, medical checkup & rules</div><div class="hc-arrow">→</div></div>
+    <div class="home-card" onclick="goPage('about')"><span class="hc-icon">👤</span><div class="hc-title">About</div><div class="hc-desc">Developer info & app details</div><div class="hc-arrow">→</div></div>
+  </div>
+</div>
+<!-- SEARCH -->
+<div class="page" id="page-search">
+  <div class="sec-title">🔍 <em>Search</em></div><div class="sec-sub">Find notes and videos instantly</div>
+  <div class="search-wrap"><span class="search-icon">🔍</span><input class="search-input" id="search-input" placeholder="Search topics, notes, videos..." oninput="doSearch(this.value)"></div>
+  <div id="search-results"><div class="empty-state">Start typing to search...</div></div>
+</div>
+<!-- AI TUTOR -->
+<div class="page" id="page-tutor">
+  <div class="sec-title">🧠 <em>MediBot</em></div><div class="sec-sub">Your AI tutor for all MBBS subjects</div>
+  <div class="chat-box">
+    <div class="chat-msgs" id="chat-msgs">
+      <div class="chat-welcome" id="chat-welcome">
+        <h3>🧠 MediBot — MBBS Tutor</h3><p>Ask anything — Anatomy, Physiology, Surgery, Medicine & all MBBS subjects!</p>
+        <div class="quick-chips">
+          <div class="qchip" onclick="sendQ('Explain the cardiac cycle simply')">❤️ Cardiac Cycle</div>
+          <div class="qchip" onclick="sendQ('Give me 5 MCQs on Pharmacology')">💊 Pharmacology MCQs</div>
+          <div class="qchip" onclick="sendQ('Explain the brachial plexus simply')">🦾 Brachial Plexus</div>
+          <div class="qchip" onclick="sendQ('What is the approach to a fever patient?')">🌡️ Fever Approach</div>
+          <div class="qchip" onclick="sendQ('Explain types of hypersensitivity reactions')">🔬 Hypersensitivity</div>
+          <div class="qchip" onclick="sendQ('Give me 5 MCQs on Pathology')">🧫 Pathology MCQs</div>
+          <div class="qchip" onclick="sendQ('Explain stages of labour')">👶 Stages of Labour</div>
+          <div class="qchip" onclick="sendQ('Important Surgery topics for exam')">🔪 Surgery Topics</div>
+        </div>
+      </div>
+    </div>
+    <div class="chat-input-row">
+      <textarea class="chat-input" id="chat-input" rows="1" placeholder="Ask your question..." onkeydown="chatKey(event)"></textarea>
+      <button class="chat-send" id="chat-send" onclick="sendMsg()">➤</button>
+    </div>
+  </div>
+</div>
+<!-- STUDY MATERIAL -->
+<div class="page" id="page-material">
+  <div class="sec-title">📚 Study <em>Material</em></div><div class="sec-sub">Browse by course, subject and folder</div>
+  <div id="material-container"></div>
+</div>
+<!-- VIDEOS -->
+<div class="page" id="page-videos">
+  <div class="sec-title">🎥 Video <em>Lectures</em></div><div class="sec-sub">All video lectures in one place</div>
+  <div class="vid-page-tabs" id="vid-page-tabs"></div>
+  <div class="videos-list" id="videos-list"></div>
+</div>
+<!-- SAVED NOTES -->
+<div class="page" id="page-saved">
+  <div class="sec-title">💾 <em>Saved</em></div><div class="sec-sub">Your offline saved & bookmarked notes</div>
+  <div id="saved-container"></div>
+</div>
+<!-- PLANNER -->
+<div class="page" id="page-planner">
+  <div class="sec-title">Study <em>Planner</em></div><div class="sec-sub">Exam countdown & daily goals</div>
+  <div class="planner-grid">
+    <div class="planner-stat"><div class="ps-val" id="ps-hours">0</div><div class="ps-label">HOURS TODAY</div></div>
+    <div class="planner-stat"><div class="ps-val" id="ps-goals">0/0</div><div class="ps-label">GOALS DONE</div></div>
+  </div>
+  <div class="study-log" style="margin-bottom:14px;">
+    <h3>⏱️ This Week's Study Hours</h3>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Time spent inside the app is tracked automatically.</div>
+    <div id="week-log"></div>
+  </div>
+  <div class="exam-card">
+    <h3>📆 Exam Countdown</h3>
+    <div class="exam-form">
+      <input class="exam-input" type="text" id="exam-name" placeholder="Exam name">
+      <input class="exam-input" type="date" id="exam-date">
+      <button class="exam-btn" onclick="addExam()">Add</button>
+    </div>
+    <div class="exams-list" id="exams-list"></div>
+  </div>
+  <div class="goals-card">
+    <h3>🎯 Today's Goals</h3>
+    <div class="goal-form"><input class="goal-input" type="text" id="goal-input" placeholder="Add a study goal..." onkeydown="if(event.key==='Enter')addGoal()"><button class="goal-add" onclick="addGoal()">Add</button></div>
+    <div id="goals-list"></div>
+  </div>
+  <!-- NOTIFICATIONS -->
+  <div class="notif-card">
+    <h3>🔔 Study Reminders</h3>
+    <div class="notif-row">
+      <label style="font-size:13px;font-weight:600;flex:1;">Daily Study Reminder</label>
+      <label class="notif-toggle"><input type="checkbox" id="notif-toggle" onchange="toggleNotification()"><span class="notif-slider"></span></label>
+    </div>
+    <div class="notif-row">
+      <label style="font-size:12px;color:var(--muted);">Remind me at:</label>
+      <input type="time" class="notif-time" id="notif-time" value="08:00" onchange="saveNotifTime()">
+    </div>
+    <div id="notif-status" style="font-size:12px;color:var(--muted);margin-top:4px;"></div>
+    <div class="notif-list" id="notif-list"></div>
+  </div>
+</div>
+<!-- LEADERBOARD -->
+<div class="page" id="page-leaderboard">
+  <div class="sec-title">🏆 <em>Leaderboard</em></div><div class="sec-sub">Top performers — updated automatically</div>
+  <div class="lb-entry-card"><h3>🧠 Top 10 — MCQ Marks</h3>
+    <div id="lb-course-locked-label" style="font-size:12px;color:var(--muted);display:none;"></div>
+    <select id="lb-course-sel" class="lb-input" style="margin-bottom:6px;" onchange="renderQuizLB()"><option value="">— Select Course —</option></select>
+  </div>
+  <div class="lb-list" id="lb-quiz-list"></div>
+  <div class="lb-entry-card" style="margin-top:20px;"><h3>⏱️ Top 10 — Study Hours</h3></div>
+  <div class="lb-list" id="lb-hours-list"></div>
+</div>
+<!-- ABOUT -->
+<div class="page" id="page-about">
+  <div class="about-hero">
+    <div class="about-avatar" id="about-avatar-display">👨‍⚕️</div>
+    <div class="about-name" id="about-name-display" onclick="secretTap()" style="cursor:default;user-select:none;">Ankit Lal Sahu</div>
+    <div class="about-role">MBBS Student · Ulyanovsk State University · Russia</div>
+    <div class="about-badges"><span class="badge">🎓 3rd Year MBBS</span><span class="badge">🇷🇺 Ulyanovsk</span><span class="badge">💻 App Developer</span></div>
+    <div style="margin-top:16px;font-size:12px;color:var(--muted);line-height:1.8;">
+      Thanks to <strong style="color:var(--text);">Alish Yadav (3rd Course)</strong> for helping upload notes!
+    </div>
+    <div style="height:1px;background:var(--border);margin:14px auto;width:60%;"></div>
+    <div style="font-size:12px;color:var(--muted);line-height:1.8;">
+      Join our WhatsApp group to discuss and stay updated:<br>
+      📱 <a href="https://chat.whatsapp.com/LY6qxBSHbAV044EQVYIjJD" target="_blank" style="color:var(--accent);text-decoration:none;">2nd Course</a>
+      &nbsp;·&nbsp;
+      📱 <a href="https://chat.whatsapp.com/LOl2WTBpHO6H94AKsKYyaM" target="_blank" style="color:var(--accent);text-decoration:none;">3rd Course</a><br>
+      — managed by <strong style="color:var(--text);">Hariom Kumar (3rd Course)</strong>
+    </div>
+  </div>
+
+  <!-- PWA Install Card -->
+  <div class="pwa-install-card" id="pwa-install-section">
+    <h3>📱 Install MediStudy App</h3>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.7;">Install on your phone's home screen — works like a real app, opens faster, and saves notes work offline!</p>
+    <button class="pwa-big-install-btn" id="pwa-about-install-btn" onclick="installPWAFromAbout()">⬇️ Install App</button>
+    <div class="pwa-manual-steps" id="pwa-manual-steps"></div>
+  </div>
+
+  <div class="ess-card">
+    <div class="ess-title" onclick="toggleAcc('about-why')"><span>💡 Why I built MediStudy</span><span class="ess-arrow" id="arrow-about-why">▾</span></div>
+    <div class="ess-content" id="about-why" style="display:none;">
+      <p>Hi! I'm Ankit Lal Sahu, a 3rd year MBBS student at Ulyanovsk State University in Russia. I built MediStudy to make studying easier for myself and my classmates — AI explanations, organized notes, and lecture videos all in one clean app.</p>
+      <p>If it helps even one student understand a topic better before an exam — it was worth building. 🩺</p>
+    </div>
+  </div>
+  <div class="ess-card">
+    <div class="ess-title" onclick="toggleAcc('about-privacy')"><span>🔒 Your Data & Privacy</span><span class="ess-arrow" id="arrow-about-privacy">▾</span></div>
+    <div class="ess-content" id="about-privacy" style="display:none;">
+      <p style="margin-bottom:10px;">Here's exactly what MediStudy collects, and why:</p>
+      <p><strong>When you sign in:</strong> your name and email, via Google or Email sign-up.</p>
+      <p><strong>In your profile:</strong> your name, course, and optionally your gender & age — used to personalize your experience and show you the right course's content.</p>
+      <p><strong>Study activity:</strong> your quiz scores, study hours (tracked automatically while the app is open), saved notes, and Batch Chat messages — used for the Leaderboard and to keep your progress synced across your devices.</p>
+      <p><strong>Who can see it:</strong> Only I (the developer) can see registered students' email. Other students only ever see your name on the Leaderboard, in Batch Chat, and in Feedback — never your email or profile details.</p>
+      <p style="margin-top:8px;">This app has no ads, and your data is never sold or shared with anyone outside MediStudy.</p>
+    </div>
+  </div>
+  <div class="ess-card">
+    <div class="ess-title" onclick="toggleAcc('about-feedback');loadMyFeedback();"><span>💬 Feedback & Support</span><span class="ess-arrow" id="arrow-about-feedback">▾</span></div>
+    <div class="ess-content" id="about-feedback" style="display:none;white-space:normal;">
+      <p style="margin-bottom:12px;">Love the app? Found a bug? Want something added? Let me know — I read every submission.</p>
+      <div class="form-group"><label>HOW DO YOU LIKE THE APP?</label>
+        <div class="star-rating" id="fb-star-rating">
+          <span class="star" data-v="1" onclick="setFbRating(1)">★</span>
+          <span class="star" data-v="2" onclick="setFbRating(2)">★</span>
+          <span class="star" data-v="3" onclick="setFbRating(3)">★</span>
+          <span class="star" data-v="4" onclick="setFbRating(4)">★</span>
+          <span class="star" data-v="5" onclick="setFbRating(5)">★</span>
+        </div>
+      </div>
+      <div class="form-group"><label>WHAT'S THIS ABOUT?</label>
+        <div class="fb-cat-row" id="fb-cat-row">
+          <div class="fb-cat-btn" data-v="Bug" onclick="setFbCategory('Bug')">🐞 Bug</div>
+          <div class="fb-cat-btn" data-v="Suggestion" onclick="setFbCategory('Suggestion')">💡 Suggestion</div>
+          <div class="fb-cat-btn" data-v="Praise" onclick="setFbCategory('Praise')">❤️ Praise</div>
+          <div class="fb-cat-btn" data-v="Other" onclick="setFbCategory('Other')">✏️ Other</div>
+        </div>
+      </div>
+      <div class="form-group"><label>YOUR MESSAGE</label>
+        <textarea id="fb-text-input" placeholder="Tell me what's on your mind..." style="height:90px;"></textarea>
+      </div>
+      <button class="submit-btn" onclick="submitFeedback()">📨 Send Feedback</button>
+      <div class="success-msg" id="fb-success">✅ Thanks! Your feedback has been sent.</div>
+      <div style="margin-top:16px;">
+        <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;">📋 COMMUNITY FEEDBACK</div>
+        <div id="my-feedback-list" style="font-size:12px;color:var(--muted);">Sign in to see feedback from everyone.</div>
+      </div>
+    </div>
+  </div>
+  <!-- Add future About sections here the same way, e.g. "📱 App Features" or "❓ How to Use" — just copy one of the .ess-card blocks above -->
+  <div class="contact-card">
+    <div class="contact-info"><h4>Connect with me</h4><p>@ankitsahu_58_ on Instagram</p></div>
+    <a class="insta-btn" href="https://instagram.com/ankitsahu_58_" target="_blank">📸 Instagram</a>
+  </div>
+  <div style="text-align:center;margin-top:16px;">
+    <a href="#" onclick="openAdmin();return false;" style="font-size:11px;color:var(--muted);text-decoration:underline;">Sponsor / Editor / Team Login</a>
+  </div>
+</div>
+<!-- STUDENT ESSENTIALS -->
+<div class="page" id="page-essentials">
+  <div class="sec-title">🎓 Student <em>Essentials (Office)</em></div>
+  <div class="sec-sub">Registration, SIM card, medical checkup & university rules — all in one place</div>
+  <div id="ess-list">Loading...</div>
+</div>
+<!-- QUICK NOTES -->
+<div class="page" id="page-quicknotes">
+  <div class="sec-title">📝 Quick <em>Notes</em></div><div class="sec-sub">Your personal notes — type anything, saved instantly</div>
+  <div class="qn-toolbar">
+    <button class="qn-new-btn" onclick="newQNote()">+ New Note</button>
+    <input class="search-input" id="qn-search" placeholder="🔍 Search notes..." oninput="renderQNotes()" style="flex:1;padding:9px 14px;">
+  </div>
+  <div id="qn-editor" style="display:none;">
+    <div class="qn-editor-box">
+      <input class="qn-title-input" id="qn-title-input" placeholder="Note title...">
+      <textarea class="qn-body-input" id="qn-body-input" placeholder="Write your notes here..."></textarea>
+      <div class="qn-editor-bar">
+        <span id="qn-save-status" style="font-size:11px;color:var(--muted);">Auto-saved ✓</span>
+        <button class="qn-del-btn" id="qn-del-btn" onclick="deleteQNote()">🗑️ Delete</button>
+        <button class="qn-done-btn" onclick="closeQNEditor()">Done ✓</button>
+      </div>
+    </div>
+  </div>
+  <div id="qn-list"></div>
+</div>
+
+<!-- PROGRESS TRACKER -->
+<div class="page" id="page-progress">
+  <div class="sec-title">📊 <em>Progress</em></div><div class="sec-sub">Track topics done per subject</div>
+  <div class="prog-summary" id="prog-summary"></div>
+  <div id="prog-container"></div>
+</div>
+
+<!-- BATCH CHAT -->
+<div class="page" id="page-chat">
+  <div class="sec-title">💬 Batch <em>Chat</em></div><div class="sec-sub">Talk with your batchmates in real-time</div>
+  <div id="chat-name-setup" style="display:none;">
+    <div class="chat-name-card">
+      <div style="font-size:32px;margin-bottom:10px;">💬</div>
+      <h3 style="font-family:var(--serif);font-size:18px;font-weight:700;margin-bottom:6px;">Join Batch Chat</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px;">Enter your name to start chatting with batchmates</p>
+      <input class="lb-input" id="chat-username-input" placeholder="Your name..." style="margin-bottom:10px;" onkeydown="if(event.key==='Enter')setChatName()">
+      <button class="lb-submit" onclick="setChatName()">Join Chat 💬</button>
+    </div>
+  </div>
+  <div id="chat-offline-notice" style="display:none;">
+    <div class="offline-banner" style="margin-bottom:12px;">
+      <span>📡</span><span>Batch Chat requires internet connection & Firebase</span>
+    </div>
+  </div>
+  <div id="chat-loading" style="display:none;flex-direction:column;align-items:center;padding:40px;gap:12px;">
+    <div class="pdf-loading-spinner"></div>
+    <span style="font-size:13px;color:var(--muted);">Connecting to chat...</span>
+  </div>
+  <div id="batch-chat-box" style="display:none;">
+    <div class="batch-chat-header">
+      <span id="batch-chat-name-display"></span>
+      <button class="qn-del-btn" onclick="changeChatName()" style="font-size:11px;padding:4px 10px;">Change Name</button>
+    </div>
+    <div class="batch-msgs" id="batch-msgs"></div>
+    <div class="batch-input-row">
+      <input class="chat-input" id="batch-input" placeholder="Type a message..." onkeydown="if(event.key==='Enter')sendBatchMsg()" style="height:38px;resize:none;">
+      <button class="chat-send" onclick="sendBatchMsg()">➤</button>
+    </div>
+  </div>
+</div>
+
+<!-- QUIZ PAGE -->
+<div class="page" id="page-quiz">
+  <div class="sec-title">🧠 MCQ <em>Quiz</em></div>
+  <div class="sec-sub">Test your knowledge subject-wise</div>
+
+  <!-- Quiz home — pick a set -->
+  <div id="quiz-home">
+    <div id="quiz-sets-list" style="margin-top:8px;"></div>
+    <div id="quiz-empty" style="display:none;text-align:center;padding:40px 20px;color:var(--muted);">
+      <div style="font-size:40px;margin-bottom:10px;">📭</div>
+      <div style="font-size:14px;">No quiz sets yet.<br>Ask your admin to add some!</div>
+    </div>
+  </div>
+
+  <!-- Active quiz -->
+  <div id="quiz-active" style="display:none;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div style="font-size:12px;color:var(--muted);" id="quiz-progress-label">Question 1 of 10</div>
+      <button onclick="exitQuiz()" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;color:var(--muted);cursor:pointer;">✕ Exit</button>
+    </div>
+    <div style="background:var(--card);border-radius:10px;height:5px;margin-bottom:16px;overflow:hidden;">
+      <div id="quiz-progress-bar" style="height:100%;background:var(--accent);transition:width 0.3s;width:0%;"></div>
+    </div>
+    <div class="card" style="margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:600;line-height:1.6;" id="quiz-question"></div>
+    </div>
+    <div id="quiz-options" style="display:flex;flex-direction:column;gap:8px;"></div>
+    <div id="quiz-explanation" style="display:none;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:10px;font-size:12px;line-height:1.6;"></div>
+    <button id="quiz-next-btn" onclick="nextQuestion()" style="display:none;width:100%;margin-top:12px;" class="submit-btn">Next →</button>
+  </div>
+
+  <!-- Quiz result -->
+  <div id="quiz-result" style="display:none;text-align:center;padding:20px 0;">
+    <div style="font-size:56px;margin-bottom:8px;" id="quiz-result-emoji">🎉</div>
+    <div style="font-size:22px;font-weight:700;font-family:var(--serif);" id="quiz-result-score"></div>
+    <div style="font-size:13px;color:var(--muted);margin:6px 0 20px;" id="quiz-result-msg"></div>
+    <button class="submit-btn" onclick="reviewQuiz()" style="margin-bottom:8px;">📋 Review Answers</button>
+    <button class="submit-btn" onclick="retryQuiz()" style="background:var(--card);color:var(--text);border:1px solid var(--border);">🔁 Try Again</button>
+    <button onclick="showQuizHome()" style="display:block;width:100%;margin-top:8px;background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;">← Back to Quiz List</button>
+    <!-- Review section -->
+    <div id="quiz-review-list" style="margin-top:16px;text-align:left;display:none;"></div>
+  </div>
+</div>
+<div class="pdf-overlay" id="pdf-overlay">
+  <div class="pdf-viewer-bar" style="position:relative;">
+    <div class="pdf-progress-bar" id="pdf-progress-bar"></div>
+    <button class="pdf-close-btn" onclick="closePDF()">✕ Close</button>
+    <span class="pdf-title" id="pdf-title"></span>
+    <button class="pdf-search-btn" id="pdf-search-btn" onclick="togglePdfSearch()" title="Search in document">🔍</button>
+    <button class="pdf-save-bar-btn" id="pdf-save-bar-btn" onclick="toggleSaveFromViewer()">💾 Save Offline</button>
+  </div>
+  <div class="pdf-search-bar" id="pdf-search-bar" style="display:none;">
+    <input type="text" id="pdf-search-input" placeholder="Search in document..." oninput="_pdfSearchDebounced()" onkeydown="if(event.key==='Enter'){event.shiftKey?pdfSearchPrev():pdfSearchNext();}">
+    <span id="pdf-search-count">0 / 0</span>
+    <button onclick="pdfSearchPrev()" title="Previous match">◀</button>
+    <button onclick="pdfSearchNext()" title="Next match">▶</button>
+    <button onclick="closePdfSearch()" title="Close search">✕</button>
+  </div>
+  <div class="pdf-loading" id="pdf-loading" style="display:none;">
+    <div class="pdf-loading-spinner"></div>
+    <span id="pdf-loading-msg" style="font-size:12px;color:var(--muted);">Opening document...</span>
+  </div>
+  <!-- PDF.js canvas renderer -->
+  <div id="pdf-canvas-container" onclick="onPdfContentTap(event)"></div>
+  <!-- Fallback iframe for Drive preview -->
+  <iframe class="pdf-frame" id="pdf-frame" allowfullscreen style="display:none;"></iframe>
+  <div class="pdf-no-embed" id="pdf-no-embed" style="display:none;">
+    <div style="font-size:56px;">📄</div>
+    <h3 style="font-family:var(--serif);font-size:20px;font-weight:700;color:var(--accent);margin-bottom:8px;">Cannot Open</h3>
+    <p id="pdf-no-embed-msg" style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:20px;">This note cannot be displayed in offline mode.<br>Save it first while online to read offline.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">
+      <button class="pdf-close-btn" onclick="closePDF()" style="font-size:14px;padding:10px 24px;">← Go Back</button>
+    </div>
+  </div>
+  <div class="pdf-immersive-hint" id="pdf-immersive-hint">👆 Tap the page to show/hide controls</div>
+  <button class="pdf-immersive-toggle" id="pdf-immersive-toggle" onclick="togglePDFImmersive()" title="Show/hide controls">⤢</button>
+  <!-- Page navigation bar -->
+  <div class="pdf-nav-bar" id="pdf-nav-bar">
+    <button class="pdf-nav-btn" id="pdf-prev-btn" onclick="pdfPrevPage()" disabled>◀ Prev</button>
+    <span id="pdf-page-info">Page 1 of 1</span>
+    <button class="pdf-nav-btn" id="pdf-next-btn" onclick="pdfNextPage()">Next ▶</button>
+  </div>
+</div>
+<!-- LOGIN MODAL -->
+<div class="modal-overlay" id="login-modal" onclick="if(event.target===this)closeLoginModal()">
+  <div class="modal" style="max-width:400px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <h2>🔐 Sign In</h2>
+      <button class="modal-close" onclick="closeLoginModal()">✕</button>
+    </div>
+    <div class="modal-sub" id="login-modal-sub">Sign in to access MediBot, Chat, Planner & more</div>
+
+    <!-- Tabs -->
+    <div style="display:flex;gap:4px;margin-bottom:16px;background:var(--card);border-radius:10px;padding:3px;">
+      <button id="ltab-signin" onclick="switchLoginTab('signin')" style="flex:1;padding:7px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none;background:var(--accent);color:#0e0f13;font-family:var(--sans);">Sign In</button>
+      <button id="ltab-signup" onclick="switchLoginTab('signup')" style="flex:1;padding:7px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none;background:transparent;color:var(--muted);font-family:var(--sans);">Create Account</button>
+    </div>
+
+    <!-- Sign In Form -->
+    <div id="lform-signin">
+      <div class="form-group">
+        <label>EMAIL</label>
+        <input type="email" id="li-email" placeholder="your@email.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label>PASSWORD</label>
+        <input type="password" id="li-password" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doEmailSignIn()">
+      </div>
+      <button class="submit-btn" onclick="doEmailSignIn()" id="li-btn">Sign In →</button>
+      <div id="li-err" style="color:#e85d38;font-size:12px;margin-top:6px;display:none;"></div>
+    </div>
+
+    <!-- Sign Up Form -->
+    <div id="lform-signup" style="display:none;">
+      <div class="form-group">
+        <label>YOUR NAME</label>
+        <input type="text" id="su-name" placeholder="e.g. Priya Sharma" autocomplete="name">
+      </div>
+      <div class="form-group">
+        <label>EMAIL</label>
+        <input type="email" id="su-email" placeholder="your@email.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label>PASSWORD <span style="color:var(--muted);font-weight:400;">(min 6 chars)</span></label>
+        <input type="password" id="su-password" placeholder="Choose a password" autocomplete="new-password" onkeydown="if(event.key==='Enter')doEmailSignUp()">
+      </div>
+      <button class="submit-btn" onclick="doEmailSignUp()" id="su-btn">Create Account →</button>
+      <div id="su-err" style="color:#e85d38;font-size:12px;margin-top:6px;display:none;"></div>
+    </div>
+
+    <!-- Divider -->
+    <div style="display:flex;align-items:center;gap:10px;margin:14px 0;">
+      <div style="flex:1;height:1px;background:var(--border);"></div>
+      <span style="font-size:11px;color:var(--muted);">OR</span>
+      <div style="flex:1;height:1px;background:var(--border);"></div>
+    </div>
+
+    <!-- Google Sign In -->
+    <button onclick="doGoogleSignIn()" id="google-signin-btn" style="width:100%;padding:10px;background:var(--card);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      Continue with Google
+    </button>
+    <div id="google-err" style="color:#e85d38;font-size:12px;margin-top:6px;display:none;"></div>
+  </div>
+</div>
+
+<!-- ADMIN MODAL -->
+<div class="modal-overlay" id="admin-modal">
+  <div class="modal">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <h2>⚙️ Admin Panel</h2><button class="modal-close" onclick="closeAdmin()">✕</button>
+    </div>
+    <div id="admin-login">
+      <div class="modal-sub">Enter password to manage content</div>
+      <div class="login-box">
+        <div class="form-group"><label>PASSWORD</label><input type="password" id="admin-pw" placeholder="Enter password..." onkeydown="if(event.key==='Enter')checkPw()"></div>
+        <button class="submit-btn" onclick="checkPw()">Unlock Admin Panel 🔐</button>
+        <div class="login-err" id="login-err">❌ Wrong password.</div>
+      </div>
+    </div>
+    <div id="admin-panel" style="display:none;">
+      <div class="modal-sub">Manage your app content</div>
+      <div id="admin-signedin-warning" style="display:none;background:rgba(232,93,56,0.15);border:1px solid #e85d38;color:#e85d38;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:12px;font-weight:600;">
+        ⚠️ You're not signed in with your account. Saves will fail — go to Login and sign in with your email/Google first, then come back here.
+      </div>
+      <div id="admin-university-bar" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 12px;margin-bottom:12px;">
+        <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:5px;">🏫 MANAGING UNIVERSITY</label>
+        <select id="admin-university-sel" onchange="switchAdminUniversity()" style="width:100%;"></select>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;">Courses, Subjects, Notes, Videos, MCQ, and Push all apply to whichever university is selected here — on every tab.</div>
+      </div>
+      <div class="admin-tabs">
+        <div class="atab active" id="atab-structure" onclick="switchATab('structure',this)">🏗️ Structure</div>
+        <div class="atab" id="atab-dashboard" onclick="switchATab('dashboard',this)">📊 Dashboard</div>
+        <div class="atab" id="atab-notes" onclick="switchATab('notes',this)">📝 Note</div>
+        <div class="atab" id="atab-videos" onclick="switchATab('videos',this)">🎥 Video</div>
+        <div class="atab" id="atab-manage" onclick="switchATab('manage',this)">🗑️ Manage</div>
+        <div class="atab" id="atab-announce" onclick="switchATab('announce',this)">📢 Announce</div>
+        <div class="atab" id="atab-essentials" onclick="switchATab('essentials',this)">🎓 Essentials (Office)</div>
+        <div class="atab" id="atab-mcq" onclick="switchATab('mcq',this)">🧠 MCQ</div>
+        <div class="atab" id="atab-students" onclick="switchATab('students',this)">👥 Students</div>
+        <div class="atab" id="atab-feedback" onclick="switchATab('feedback',this)">💬 Feedback</div>
+        <div class="atab" id="atab-firebase" onclick="switchATab('firebase',this)">🔥 Firebase</div>
+      </div>
+      <!-- STRUCTURE -->
+      <div class="aform active" id="aform-structure">
+        <div class="section-label">🏫 Add a New University</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Use the "Managing University" bar above to switch which university you're editing. Use this only to create a brand new one.</div>
+        <div class="add-inline"><input type="text" id="new-uni-name" placeholder="New university name"><button onclick="addUniversity()">+ Add Uni</button></div>
+        <div class="add-inline" style="margin-top:4px;"><input type="text" id="new-uni-id" placeholder="short id e.g. ksmu"></div>
+        <div class="section-label" style="margin-top:18px;">📘 Courses</div>
+        <div id="admin-courses-list"></div>
+        <div class="add-inline"><input type="text" id="new-course-name" placeholder="e.g. 1st Course"><button onclick="addCourse()">+ Add</button></div>
+        <div class="section-label" style="margin-top:18px;">🔬 Subjects</div>
+        <div class="form-group" style="margin-bottom:8px;"><label>SELECT COURSE</label><select id="struct-course-sel" onchange="renderAdminSubjects()"></select></div>
+        <div id="admin-subjects-list"></div>
+        <div class="add-inline"><input type="text" id="new-subject-name" placeholder="e.g. Anatomy"><button onclick="addSubject()">+ Add</button></div>
+        <div class="section-label" style="margin-top:18px;">📁 Folders <span style="font-weight:400;font-size:10px;color:var(--muted);">(inside a subject)</span></div>
+        <div class="form-group" style="margin-bottom:4px;"><label>SELECT COURSE</label><select id="struct-fcourse" onchange="updateFolderSubjects()"></select></div>
+        <div class="form-group" style="margin-bottom:8px;"><label>SELECT SUBJECT</label><select id="struct-fsubject" onchange="renderAdminFolders()"></select></div>
+        <div id="admin-folders-list"></div>
+        <div class="add-inline"><input type="text" id="new-folder-name" placeholder="e.g. Short Notes, Diagrams"><button onclick="addFolder()">+ Add</button></div>
+        <div class="success-msg" id="struct-success">✅ Saved!</div>
+        <button class="submit-btn" onclick="pushToFirebase('struct-push-success')" style="background:var(--green);color:#052e16;margin-top:14px;">⬆️ Save & Push to Firebase</button>
+        <div class="success-msg" id="struct-push-success">✅ Pushed! Everyone can now see this.</div>
+      </div>
+      <!-- NOTE -->
+      <div class="aform" id="aform-dashboard">
+        <div class="section-label">📊 Dashboard</div>
+        <div id="dash-summary-cards" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">
+          <div style="font-size:12px;color:var(--muted);">Loading...</div>
+        </div>
+        <div class="section-label">🔥 Top Liked Notes</div>
+        <div id="dash-top-liked"></div>
+      </div>
+
+      <div class="aform" id="aform-notes">
+        <div class="form-group"><label>COURSE</label><select id="note-course" onchange="updateNoteSubjects()"></select></div>
+        <div class="form-group"><label>SUBJECT</label><select id="note-subject" onchange="updateNoteFolders()"></select></div>
+        <div class="form-group"><label>FOLDER</label><select id="note-folder"></select></div>
+        <div class="form-group"><label>TOPIC NAME</label><input type="text" id="note-topic" placeholder="e.g. Cardiac Cycle"></div>
+        <div class="form-group"><label>DESCRIPTION (optional)</label><textarea id="note-desc" placeholder="Short description..."></textarea></div>
+        <div class="form-group"><label>GOOGLE DRIVE LINK</label><input type="url" id="note-link" placeholder="https://drive.google.com/..."></div>
+        <button class="submit-btn" id="note-submit-btn" onclick="addNote()">➕ Add Note</button>
+        <button class="submit-btn" id="note-cancel-edit-btn" onclick="cancelEditNote()" style="display:none;background:var(--card);color:var(--text);border:1px solid var(--border);margin-top:8px;">✕ Cancel Edit</button>
+        <div class="success-msg" id="note-success">✅ Note added!</div>
+        <button class="submit-btn" onclick="pushToFirebase('note-push-success')" style="background:var(--green);color:#052e16;margin-top:14px;">⬆️ Save & Push to Firebase</button>
+        <div class="success-msg" id="note-push-success">✅ Pushed! Everyone can now see this.</div>
+      </div>
+      <!-- VIDEO -->
+      <div class="aform" id="aform-videos">
+        <div class="form-group"><label>COURSE</label><select id="vid-course" onchange="updateVidSubjects()"></select></div>
+        <div class="form-group"><label>SUBJECT</label><select id="vid-subject"></select></div>
+        <div class="form-group"><label>LECTURE TITLE</label><input type="text" id="vid-title" placeholder="e.g. Heart Sounds Explained"></div>
+        <div class="form-group"><label>DESCRIPTION (optional)</label><input type="text" id="vid-desc" placeholder="Short description..."></div>
+        <div class="form-group"><label>YOUTUBE LINK</label><input type="url" id="vid-link" placeholder="https://youtube.com/watch?v=..."></div>
+        <button class="submit-btn" id="vid-submit-btn" onclick="addVideo()">➕ Add Video</button>
+        <button class="submit-btn" id="vid-cancel-edit-btn" onclick="cancelEditVideo()" style="display:none;background:var(--card);color:var(--text);border:1px solid var(--border);margin-top:8px;">✕ Cancel Edit</button>
+        <div class="success-msg" id="vid-success">✅ Video added!</div>
+        <button class="submit-btn" onclick="pushToFirebase('vid-push-success')" style="background:var(--green);color:#052e16;margin-top:14px;">⬆️ Save & Push to Firebase</button>
+        <div class="success-msg" id="vid-push-success">✅ Pushed! Everyone can now see this.</div>
+      </div>
+      <!-- MANAGE -->
+      <div class="aform" id="aform-manage">
+        <div class="section-label">Notes</div><div class="manage-list" id="manage-notes"></div>
+        <div class="section-label">Videos</div><div class="manage-list" id="manage-videos"></div>
+        <button class="submit-btn" onclick="pushToFirebase('manage-push-success')" style="background:var(--green);color:#052e16;margin-top:14px;">⬆️ Save & Push to Firebase</button>
+        <div class="success-msg" id="manage-push-success">✅ Pushed! Everyone can now see this.</div>
+      </div>
+      <!-- ANNOUNCE -->
+      <div class="aform" id="aform-announce">
+        <div class="section-label">📢 Post Announcement</div>
+        <div class="form-group"><label>TITLE</label><input type="text" id="ann-title" placeholder="e.g. New Notes Uploaded!"></div>
+        <div class="form-group"><label>MESSAGE</label><textarea id="ann-msg" placeholder="e.g. Physiology Chapter 5 notes are now available in the app." style="height:80px;"></textarea></div>
+        <div class="form-group"><label>TYPE</label>
+          <select id="ann-type" class="lb-input">
+            <option value="info">ℹ️ Info (blue)</option>
+            <option value="success">✅ Success (green)</option>
+            <option value="warning">⚠️ Warning (yellow)</option>
+            <option value="urgent">🔴 Urgent (red)</option>
+          </select>
+        </div>
+        <div class="form-group"><label>EXPIRES AFTER</label>
+          <select id="ann-expiry" class="lb-input">
+            <option value="1">1 day</option>
+            <option value="3" selected>3 days</option>
+            <option value="7">7 days</option>
+            <option value="30">30 days</option>
+          </select>
+        </div>
+        <button class="submit-btn" onclick="postAnnouncement()">📢 Post Announcement</button>
+        <div class="success-msg" id="ann-success">✅ Announcement posted!</div>
+        <div class="section-label" style="margin-top:16px;">Active Announcements</div>
+        <div id="admin-ann-list" style="font-size:12px;color:var(--muted);">Loading...</div>
+      </div>
+      <!-- STUDENT ESSENTIALS -->
+      <div class="aform" id="aform-essentials">
+        <div class="section-label">🎓 Add Student Essential (Office)</div>
+        <div class="form-group"><label>TITLE</label><input type="text" id="ess-title-input" placeholder="e.g. How to get registration"></div>
+        <div class="form-group"><label>CONTENT</label><textarea id="ess-content-input" placeholder="Step-by-step process, office hours, documents needed, etc." style="height:120px;"></textarea></div>
+        <button class="submit-btn" onclick="addEssential()">➕ Add to Student Essentials (Office)</button>
+        <div class="success-msg" id="ess-success">✅ Added!</div>
+        <div class="section-label" style="margin-top:16px;">Current Essentials</div>
+        <div id="admin-ess-list" style="font-size:12px;color:var(--muted);">Loading...</div>
+      </div>
+      <!-- MCQ -->
+      <div class="aform" id="aform-mcq">
+        <div class="section-label">🧠 MCQ Generator</div>
+
+        <!-- Sub tabs -->
+        <div style="display:flex;gap:4px;margin-bottom:14px;background:var(--card);border-radius:10px;padding:3px;">
+          <button id="mcqtab-ai" onclick="switchMCQTab('ai')" style="flex:1;padding:7px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none;background:var(--accent);color:#0e0f13;font-family:var(--sans);">🤖 AI Generate</button>
+          <button id="mcqtab-manual" onclick="switchMCQTab('manual')" style="flex:1;padding:7px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none;background:transparent;color:var(--muted);font-family:var(--sans);">✏️ Manual</button>
+        </div>
+
+        <!-- AI Generate panel -->
+        <div id="mcq-ai-panel">
+          <div id="mcq-step1">
+          <div class="form-group">
+            <label>SUBJECT / TOPIC NAME</label>
+            <input type="text" id="mcq-subject" placeholder="e.g. Cardiac Cycle — Physiology">
+          </div>
+          <div class="form-group">
+            <label>LINK TO SUBJECT <span style="color:var(--muted);font-weight:400;">(where to show in Study Material)</span></label>
+            <select id="mcq-course-sel" class="lb-input" style="margin-bottom:6px;" onchange="updateMCQSubjects('mcq-subject-sel','mcq-course-sel')"><option value="">— Select Course —</option></select>
+            <select id="mcq-subject-sel" class="lb-input"><option value="">— Select Subject —</option></select>
+          </div>
+          <div class="form-group">
+            <label>PASTE YOUR NOTES HERE</label>
+            <textarea id="mcq-notes" placeholder="Paste your lecture notes, textbook content, or any study material here... AI will generate MCQs from it." style="height:140px;font-size:12px;"></textarea>
+          </div>
+          <div class="form-group">
+            <label>NUMBER OF QUESTIONS</label>
+            <select id="mcq-count" class="lb-input">
+              <option value="5">5 questions</option>
+              <option value="10" selected>10 questions</option>
+              <option value="15">15 questions</option>
+              <option value="20">20 questions</option>
+            </select>
+          </div>
+          <button class="submit-btn" onclick="generateMCQ()" id="mcq-gen-btn">🤖 Generate MCQs</button>
+          <div id="mcq-gen-status" style="font-size:12px;color:var(--muted);margin-top:8px;display:none;">⏳ AI is generating questions...</div>
+          </div><!-- end mcq-step1 -->
+
+        <!-- Step 2: Review generated MCQs -->
+        <div id="mcq-step2" style="display:none;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div style="font-size:13px;font-weight:700;" id="mcq-review-title">Review Questions</div>
+            <button onclick="resetMCQGen()" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:6px;padding:4px 10px;color:var(--muted);cursor:pointer;">← Start Over</button>
+          </div>
+          <div id="mcq-review-list"></div>
+          <button class="submit-btn" onclick="publishMCQSet()" id="mcq-pub-btn" style="margin-top:10px;">✅ Publish to Students</button>
+          <div class="success-msg" id="mcq-pub-success">✅ MCQ set published!</div>
+        </div>
+        </div><!-- end mcq-ai-panel -->
+
+        <!-- Manual Add panel -->
+        <div id="mcq-manual-panel" style="display:none;">
+          <div class="form-group">
+            <label>SUBJECT / TOPIC NAME</label>
+            <input type="text" id="mcq-manual-subject" placeholder="e.g. Cardiac Cycle — Physiology">
+          </div>
+          <div class="form-group">
+            <label>LINK TO SUBJECT <span style="color:var(--muted);font-weight:400;">(where to show in Study Material)</span></label>
+            <select id="mcq-manual-course-sel" class="lb-input" style="margin-bottom:6px;" onchange="updateMCQSubjects('mcq-manual-subject-sel','mcq-manual-course-sel')"><option value="">— Select Course —</option></select>
+            <select id="mcq-manual-subject-sel" class="lb-input"><option value="">— Select Subject —</option></select>
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Add questions one by one. They'll be saved together as one set when you publish.</div>
+
+          <!-- Bulk paste & auto-fill -->
+          <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px;">
+            <div class="form-group">
+              <label>📋 PASTE & AUTO-FILL <span style="color:var(--muted);font-weight:400;">(paste a whole block of MCQs)</span></label>
+              <textarea id="mq-bulk-paste" placeholder="1. Question text?
+
+A. Option
+B. Option
+C. Option
+D. Option
+
+Answer: B — optional explanation
+
+---
+
+2. Next question..." style="height:130px;"></textarea>
+            </div>
+            <button class="submit-btn" onclick="parseBulkMCQs()" style="margin-top:4px;">🪄 Parse & Add All</button>
+            <div id="mq-bulk-status" style="font-size:12px;margin-top:8px;display:none;"></div>
+          </div>
+
+          <!-- Add single question form -->
+          <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px;">
+            <div class="form-group">
+              <label>QUESTION</label>
+              <textarea id="mq-question" placeholder="Type your question here..." style="height:70px;"></textarea>
+            </div>
+            <div class="form-group"><label>OPTION A</label><input type="text" id="mq-opt0" placeholder="Option A"></div>
+            <div class="form-group"><label>OPTION B</label><input type="text" id="mq-opt1" placeholder="Option B"></div>
+            <div class="form-group"><label>OPTION C</label><input type="text" id="mq-opt2" placeholder="Option C"></div>
+            <div class="form-group"><label>OPTION D</label><input type="text" id="mq-opt3" placeholder="Option D"></div>
+            <div class="form-group">
+              <label>CORRECT ANSWER</label>
+              <select id="mq-answer" class="lb-input">
+                <option value="0">A</option>
+                <option value="1">B</option>
+                <option value="2">C</option>
+                <option value="3">D</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>EXPLANATION <span style="color:var(--muted);font-weight:400;">(optional)</span></label>
+              <input type="text" id="mq-explanation" placeholder="Why is this the correct answer?">
+            </div>
+            <button class="submit-btn" onclick="addManualQuestion()" style="margin-top:4px;">➕ Add Question</button>
+          </div>
+
+          <!-- Questions added so far -->
+          <div id="mq-added-list"></div>
+          <div id="mq-count-label" style="font-size:12px;color:var(--muted);margin-bottom:8px;display:none;"></div>
+          <button class="submit-btn" onclick="publishManualMCQ()" id="mq-pub-btn" style="display:none;">✅ Publish Set to Students</button>
+          <div class="success-msg" id="mq-pub-success">✅ MCQ set published!</div>
+        </div>
+
+        <!-- Published MCQ Sets — shown for both tabs -->
+        <div class="section-label" style="margin-top:16px;">Published MCQ Sets</div>
+        <div id="admin-mcq-list" style="font-size:12px;color:var(--muted);">Loading...</div>
+      </div>
+
+      <!-- STUDENTS -->
+      <div class="aform" id="aform-students">
+        <div class="section-label">👥 Registered Students</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+          <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px;">
+            <input type="checkbox" id="students-today-only" onchange="renderStudentsList()"> Today's logins only
+          </label>
+          <button onclick="loadStudentsList()" style="margin-left:auto;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer;">🔄 Refresh</button>
+        </div>
+        <div id="students-summary" style="font-size:12px;color:var(--muted);margin-bottom:10px;"></div>
+        <div id="students-list"></div>
+      </div>
+
+      <!-- FEEDBACK -->
+      <div class="aform" id="aform-feedback">
+        <div class="section-label">💬 Student Feedback</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+          <select id="feedback-cat-filter" onchange="renderFeedbackList()" style="padding:6px 10px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;">
+            <option value="">All categories</option>
+            <option value="Bug">🐞 Bug</option>
+            <option value="Suggestion">💡 Suggestion</option>
+            <option value="Praise">❤️ Praise</option>
+            <option value="Other">✏️ Other</option>
+          </select>
+          <select id="feedback-status-filter" onchange="renderFeedbackList()" style="padding:6px 10px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;">
+            <option value="">All statuses</option>
+            <option value="New">🔵 New</option>
+            <option value="Seen">🟡 Seen</option>
+            <option value="Resolved">🟢 Resolved</option>
+          </select>
+          <button onclick="loadFeedbackList()" style="margin-left:auto;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer;">🔄 Refresh</button>
+        </div>
+        <div id="feedback-summary" style="font-size:12px;color:var(--muted);margin-bottom:10px;"></div>
+        <div id="feedback-list"></div>
+      </div>
+
+      <!-- FIREBASE -->
+      <div class="aform" id="aform-firebase">
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px;">🔥 Firebase Status</div>
+          <div id="fb-status-text" style="font-size:12px;color:var(--muted);line-height:1.7;"></div>
+        </div>
+        <div style="background:#0e1a2e;border:1px solid var(--blue);border-radius:10px;padding:14px;margin-bottom:12px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px;color:var(--blue);">🤖 AI Tutor Key (Groq)</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:8px;">Your Groq key is active! ✅ Free & fast.<br>Update it here if needed.</div>
+          <input type="text" id="gemini-key-input" placeholder="gsk_..." style="width:100%;padding:8px 11px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:monospace;font-size:12px;outline:none;margin-bottom:8px;">
+          <button onclick="saveGeminiKey()" style="width:100%;padding:9px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:13px;">💾 Update AI Key</button>
+          <div id="gemini-key-status" style="font-size:11px;margin-top:6px;color:var(--muted);"></div>
+        </div>
+        <div class="form-group"><label>FIREBASE API KEY</label><input type="text" id="fb-api-key" placeholder="AIzaSy..."></div>
+        <div class="form-group"><label>DATABASE URL</label><input type="url" id="fb-db-url" placeholder="https://your-app-default-rtdb.firebaseio.com"></div>
+        <div class="form-group"><label>PROJECT ID</label><input type="text" id="fb-project-id" placeholder="your-project-id"></div>
+        <button class="submit-btn" onclick="connectFirebase()" style="background:var(--blue);">🔥 Connect Firebase</button>
+        <button class="submit-btn" id="fb-push-btn" onclick="pushToFirebase()" style="background:var(--green);color:#052e16;">⬆️ Push My Data to Firebase</button>
+        <button class="submit-btn" id="fb-pull-btn" onclick="pullFromFirebase()" style="background:var(--purple);">⬇️ Pull Latest Data from Firebase</button>
+        <div class="success-msg" id="fb-success"></div>
+
+        <div style="background:#1a1006;border:1px solid var(--accent);border-radius:10px;padding:14px;margin-top:16px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px;color:var(--accent);">🚚 Migrate to Scoped Sync</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:10px;">
+            One-time setup step. Copies your current data into a new, university + course-scoped structure
+            (<code>medistudy_universities</code> + <code>medistudy_courses/&lt;universityId&gt;</code> +
+            <code>medistudy_content/&lt;universityId&gt;/&lt;courseId&gt;</code>) so students will eventually only
+            sync their own university's own course. Run this once per university — safe to re-run later for a new
+            university without affecting ones already migrated. This is a pure <strong>copy</strong> — your existing
+            <code>medistudy</code> node is left untouched, and nothing changes for students yet.
+          </div>
+          <button class="submit-btn" id="fb-migrate-btn" onclick="migrateToScopedSync()" style="background:var(--accent);color:#000;">🚚 Migrate to Scoped Sync</button>
+          <div id="fb-migrate-status" style="font-size:12px;margin-top:8px;line-height:1.6;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+<!-- VIDEO PLAYER OVERLAY -->
+<div class="video-overlay" id="video-overlay">
+  <div class="video-viewer-bar">
+    <button class="video-close-btn" onclick="closeVideo()">✕ Close</button>
+    <span class="pdf-title" id="video-title"></span>
+    <button class="pdf-save-bar-btn" id="video-save-bar-btn" onclick="toggleSaveFromVideoViewer()">💾 Save</button>
+  </div>
+  <div class="video-frame-wrap" id="video-frame-wrap">
+    <iframe id="video-frame" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture"></iframe>
+  </div>
+  <div class="video-fallback" id="video-fallback" style="display:none;">
+    <img id="video-thumb-img" src="" alt="" style="width:100%;max-width:340px;border-radius:12px;margin-bottom:16px;display:none;">
+    <div class="yt-big">▶️</div>
+    <h3 id="video-fallback-title" style="color:#fff;font-size:17px;margin-bottom:8px;text-align:center;padding:0 16px;"></h3>
+    <p style="font-size:13px;color:#aaa;margin-bottom:20px;text-align:center;max-width:300px;line-height:1.6;">This video can't be played inside the app.<br>Tap below to watch it directly.</p>
+    <a id="video-fallback-link" class="yt-open-btn" target="_blank">▶ Watch on YouTube</a>
+    <button onclick="tryEmbedVideo()" style="margin-top:12px;background:none;border:1px solid #555;color:#aaa;padding:8px 18px;border-radius:8px;font-size:12px;cursor:pointer;">Try embed anyway</button>
+  </div>
+</div>
+
+<!-- Secret Admin Hint -->
+<div class="secret-hint" id="secret-hint"></div>
+
+<!-- OFFLINE TOAST -->
+<div id="offline-toast"></div>
+
+<!-- PWA Install Banner -->
+<div class="pwa-banner" id="pwa-banner">
+  <div class="pwa-banner-icon">🩺</div>
+  <div class="pwa-banner-text">
+    <div class="pwa-banner-title">Install MediStudy App</div>
+    <div class="pwa-banner-sub">Add to home screen — works offline too!</div>
+  </div>
+  <button class="pwa-install-btn" id="pwa-install-btn" onclick="installPWA()">Install</button>
+  <button class="pwa-dismiss-btn" onclick="dismissPWA()">✕</button>
+</div>
+
+
+<script src="core.js"></script>
+<script src="features.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>
