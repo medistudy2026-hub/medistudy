@@ -1,6 +1,6 @@
 // MediStudy Service Worker — sw.js
 // Works on GitHub Pages (/medistudy/) and any custom domain
-const CACHE_NAME = 'medistudy-shell-v4';
+const CACHE_NAME = 'medistudy-shell-v5';
 const SKIP_WAITING_MSG = 'SKIP_WAITING';
 
 // Core app shell — cached upfront on install so offline mode works

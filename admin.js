@@ -35,11 +35,13 @@ function showPanel(){
     document.querySelectorAll('.atab').forEach(t=>t.style.display='none');
     ['atab-structure','atab-notes','atab-videos','atab-manage','atab-mcq','atab-announce','atab-feedback','atab-dashboard'].forEach(id=>{document.getElementById(id).style.display='';});
     populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();
+    ensureFullAdminDataLoaded(()=>{populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();});
     switchATab('structure', document.getElementById('atab-structure'));
     return;
   }
   document.querySelectorAll('.atab').forEach(t=>t.style.display='');
   populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();updateFBStatus();
+  ensureFullAdminDataLoaded(()=>{populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();});
   if(fbConfig){
     document.getElementById('fb-api-key').value=fbConfig.apiKey||'';
     document.getElementById('fb-db-url').value=fbConfig.databaseURL||'';

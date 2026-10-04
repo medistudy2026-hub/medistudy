@@ -118,6 +118,11 @@ function initFirebase(cb){
     updateFBStatus();updateHomeBanner();
   });
 }
+// Hardcoded for now — only Ulyanovsk State University is live. When a second
+// university (e.g. Kirov) is actually onboarded, this becomes per-student instead
+// of a constant, tied to whichever university the student belongs to.
+const SYNC_UNIVERSITY_ID = 'usu';
+
 function pushToFirebase(successId,_retries){
   _retries = _retries||0;
   if(!fbConnected||!db){
@@ -125,7 +130,22 @@ function pushToFirebase(successId,_retries){
     alert('Still connecting to the server. Please check your internet connection and try again in a few seconds.');
     return;
   }
-  db.ref('medistudy').set({courses,subjects,folders,notes,videos,updatedAt:Date.now()})
+  const uid = SYNC_UNIVERSITY_ID;
+  const scopedUpdates = {};
+  scopedUpdates[`medistudy_courses/${uid}`] = courses;
+  courses.forEach(co=>{
+    const cid = co.id;
+    scopedUpdates[`medistudy_content/${uid}/${cid}/subjects`] = subjects.filter(s=>s.courseId===cid);
+    scopedUpdates[`medistudy_content/${uid}/${cid}/folders`]  = folders.filter(f=>f.courseId===cid);
+    scopedUpdates[`medistudy_content/${uid}/${cid}/notes`]    = notes.filter(n=>n.courseId===cid);
+    scopedUpdates[`medistudy_content/${uid}/${cid}/videos`]   = videos.filter(v=>v.courseId===cid);
+  });
+  // Dual-write during the transition: old flat node keeps any not-yet-updated
+  // devices working, new scoped structure is what updated devices read from.
+  Promise.all([
+    db.ref('medistudy').set({courses,subjects,folders,notes,videos,updatedAt:Date.now()}),
+    db.ref().update(scopedUpdates)
+  ])
     .then(()=>flashSuccess(successId||'fb-success','✅ Pushed! Friends can now pull.'))
     .catch(e=>alert('Push failed: '+e.message));
 }
@@ -276,22 +296,59 @@ if(!fbConfig){
   };
   localStorage.setItem('ms4_fbconfig', JSON.stringify(fbConfig));
 }
-initFirebase(function(){
-  // Real-time sync — when admin pushes, all devices update automatically
+// Tracks whichever course-content path is currently subscribed, so we can detach
+// it when the student switches courses (or when admin mode takes over syncing).
+let _courseContentRef = null;
+function subscribeToCourseContent(courseId){
   if(!db) return;
-  db.ref('medistudy').on('value', function(snap){
+  if(_courseContentRef){ _courseContentRef.off(); _courseContentRef=null; }
+  if(!courseId) return;
+  _courseContentRef = db.ref(`medistudy_content/${SYNC_UNIVERSITY_ID}/${courseId}`);
+  _courseContentRef.on('value', function(snap){
+    if(adminUnlocked) return; // admin/editor stay on the full unscoped dataset
     const d = snap.val();
     if(!d) return;
-    courses  = d.courses  || courses;
-    subjects = d.subjects || subjects;
-    folders  = d.folders  || folders;
-    notes    = d.notes    || notes;
-    videos   = d.videos   || videos;
+    subjects = d.subjects || [];
+    folders  = d.folders  || [];
+    notes    = d.notes    || [];
+    videos   = d.videos   || [];
     saveLocal();
-    // Refresh current view if on material or videos page
     if(document.getElementById('page-material').classList.contains('active')) renderMaterial();
     if(document.getElementById('page-videos').classList.contains('active')) renderVideosPage();
   });
+}
+
+// One-time full pull for admin/editor use — they manage ALL courses, not just one,
+// so they always need the complete (unscoped) dataset regardless of what the
+// student-facing scoped listener above has loaded. Kept fresh by the dual-write
+// in pushToFirebase(). cb runs after the data lands (or immediately if offline).
+function ensureFullAdminDataLoaded(cb){
+  if(!fbConnected||!db){ if(cb)cb(); return; }
+  db.ref('medistudy').once('value').then(snap=>{
+    const d = snap.val();
+    if(d){
+      courses=d.courses||courses; subjects=d.subjects||subjects; folders=d.folders||folders;
+      notes=d.notes||notes; videos=d.videos||videos;
+      saveLocal();
+    }
+    if(cb)cb();
+  }).catch(()=>{ if(cb)cb(); });
+}
+
+initFirebase(function(){
+  if(!db) return;
+  // Lightweight — just the course list, so students can see/pick a course even
+  // before their own course content has synced.
+  db.ref(`medistudy_courses/${SYNC_UNIVERSITY_ID}`).on('value', function(snap){
+    if(adminUnlocked) return; // admin/editor stay on the full unscoped dataset
+    const d = snap.val();
+    if(!d) return;
+    courses = d;
+    saveLocal();
+    if(document.getElementById('page-material').classList.contains('active')) renderMaterial();
+  });
+  // Scoped — only the student's own course's content, not everyone else's.
+  subscribeToCourseContent(getStudentCourseId());
 });
 // ═══════════════ PWA ═══════════════
 let deferredPrompt = null;
@@ -490,6 +547,7 @@ function saveProfile(){
   // If the course changed, refresh any course-locked pages so the switch takes effect immediately
   if(prevCourse!==userProfile.course){
     const lc=getStudentCourseId();
+    subscribeToCourseContent(lc);
     smView = lc?{level:'subjects',courseId:lc}:{level:'courses'};
     if(document.getElementById('page-material').classList.contains('active'))renderMaterial();
     if(document.getElementById('page-videos').classList.contains('active'))renderVideosPage();
