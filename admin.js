@@ -1,4 +1,44 @@
 // ═══════════════ ADMIN ═══════════════
+// Which university's content the admin/editor is currently managing (Structure/
+// Notes/Videos/Manage/MCQ + the Push button all act on this one). Defaults to
+// Ulyanovsk since that's the original/primary university.
+let ADMIN_ACTIVE_UNIVERSITY_ID = localStorage.getItem('ms4_admin_uni') || DEFAULT_UNIVERSITY_ID;
+
+function populateAdminUniversitySelect(){
+  const sel=document.getElementById('admin-university-sel');
+  if(!sel) return;
+  sel.innerHTML = universities.map(u=>`<option value="${u.id}">${escapeHTML(u.name)}</option>`).join('');
+  sel.value = universities.some(u=>u.id===ADMIN_ACTIVE_UNIVERSITY_ID) ? ADMIN_ACTIVE_UNIVERSITY_ID : DEFAULT_UNIVERSITY_ID;
+}
+function switchAdminUniversity(){
+  const sel=document.getElementById('admin-university-sel');
+  if(!sel||!sel.value) return;
+  ADMIN_ACTIVE_UNIVERSITY_ID = sel.value;
+  localStorage.setItem('ms4_admin_uni', ADMIN_ACTIVE_UNIVERSITY_ID);
+  ensureFullAdminDataLoaded(()=>{populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();});
+}
+function addUniversity(){
+  const nameInp=document.getElementById('new-uni-name'), idInp=document.getElementById('new-uni-id');
+  const name=nameInp.value.trim(), id=idInp.value.trim().toLowerCase();
+  if(!name||!id){alert('Enter both a name and a short id.');return;}
+  if(!/^[a-z0-9_-]+$/.test(id)){alert('Short id should be simple letters/numbers only, e.g. ksmu');return;}
+  if(!fbConnected||!db){alert('Not connected to Firebase.');return;}
+  db.ref('medistudy_universities').once('value').then(snap=>{
+    const list = snap.val()||[];
+    if(list.some(u=>u.id===id)){alert('That id already exists — pick a different one.');return;}
+    const updated=[...list,{id,name}];
+    const updates={};
+    updates['medistudy_universities']=updated;
+    updates[`medistudy_courses/${id}`]=[{id:'c1',name:'1st Course'},{id:'c2',name:'2nd Course'},{id:'c3',name:'3rd Course'}];
+    db.ref().update(updates).then(()=>{
+      universities=updated;
+      nameInp.value='';idInp.value='';
+      populateAdminUniversitySelect();
+      alert('✅ '+name+' added with 1st/2nd/3rd Course. Select it above to manage its content.');
+    }).catch(e=>alert('Failed: '+e.message));
+  }).catch(e=>alert('Failed: '+e.message));
+}
+
 function openAdmin(){
   document.getElementById('admin-modal').classList.add('open');
   if(adminUnlocked)showPanel();
@@ -34,12 +74,14 @@ function showPanel(){
     // Limited view: Structure, Notes, Videos, Manage, MCQ, Announce, Feedback, Dashboard — no Essentials/Students/Firebase
     document.querySelectorAll('.atab').forEach(t=>t.style.display='none');
     ['atab-structure','atab-notes','atab-videos','atab-manage','atab-mcq','atab-announce','atab-feedback','atab-dashboard'].forEach(id=>{document.getElementById(id).style.display='';});
+    populateAdminUniversitySelect();
     populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();
     ensureFullAdminDataLoaded(()=>{populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();});
     switchATab('structure', document.getElementById('atab-structure'));
     return;
   }
   document.querySelectorAll('.atab').forEach(t=>t.style.display='');
+  populateAdminUniversitySelect();
   populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();updateFBStatus();
   ensureFullAdminDataLoaded(()=>{populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();});
   if(fbConfig){

@@ -118,10 +118,14 @@ function initFirebase(cb){
     updateFBStatus();updateHomeBanner();
   });
 }
-// Hardcoded for now — only Ulyanovsk State University is live. When a second
-// university (e.g. Kirov) is actually onboarded, this becomes per-student instead
-// of a constant, tied to whichever university the student belongs to.
-const SYNC_UNIVERSITY_ID = 'usu';
+// Fallback for students who haven't picked a university yet (everyone before
+// this feature existed was implicitly Ulyanovsk) and for admin/push defaults.
+const DEFAULT_UNIVERSITY_ID = 'usu';
+let universities = JSON.parse(localStorage.getItem('ms4_universities') || '[]');
+function getStudentUniversityId(){
+  if(userProfile && userProfile.university && universities.some(u=>u.id===userProfile.university)) return userProfile.university;
+  return DEFAULT_UNIVERSITY_ID;
+}
 
 function pushToFirebase(successId,_retries){
   _retries = _retries||0;
@@ -130,7 +134,7 @@ function pushToFirebase(successId,_retries){
     alert('Still connecting to the server. Please check your internet connection and try again in a few seconds.');
     return;
   }
-  const uid = SYNC_UNIVERSITY_ID;
+  const uid = (typeof ADMIN_ACTIVE_UNIVERSITY_ID!=='undefined' && ADMIN_ACTIVE_UNIVERSITY_ID) ? ADMIN_ACTIVE_UNIVERSITY_ID : DEFAULT_UNIVERSITY_ID;
   const scopedUpdates = {};
   scopedUpdates[`medistudy_courses/${uid}`] = courses;
   courses.forEach(co=>{
@@ -140,12 +144,13 @@ function pushToFirebase(successId,_retries){
     scopedUpdates[`medistudy_content/${uid}/${cid}/notes`]    = notes.filter(n=>n.courseId===cid);
     scopedUpdates[`medistudy_content/${uid}/${cid}/videos`]   = videos.filter(v=>v.courseId===cid);
   });
-  // Dual-write during the transition: old flat node keeps any not-yet-updated
-  // devices working, new scoped structure is what updated devices read from.
-  Promise.all([
-    db.ref('medistudy').set({courses,subjects,folders,notes,videos,updatedAt:Date.now()}),
-    db.ref().update(scopedUpdates)
-  ])
+  const writes = [db.ref().update(scopedUpdates)];
+  if(uid===DEFAULT_UNIVERSITY_ID){
+    // Ulyanovsk still dual-writes the legacy flat node for any not-yet-updated devices.
+    // Other universities never had an old node, so they skip this.
+    writes.push(db.ref('medistudy').set({courses,subjects,folders,notes,videos,updatedAt:Date.now()}));
+  }
+  Promise.all(writes)
     .then(()=>flashSuccess(successId||'fb-success','✅ Pushed! Friends can now pull.'))
     .catch(e=>alert('Push failed: '+e.message));
 }
@@ -296,14 +301,30 @@ if(!fbConfig){
   };
   localStorage.setItem('ms4_fbconfig', JSON.stringify(fbConfig));
 }
-// Tracks whichever course-content path is currently subscribed, so we can detach
-// it when the student switches courses (or when admin mode takes over syncing).
+// Tracks whichever course-list / course-content paths are currently subscribed,
+// so we can detach them when the student switches university or course (or when
+// admin mode takes over syncing).
+let _courseListRef = null;
+function subscribeToUniversityCourses(universityId){
+  if(!db) return;
+  if(_courseListRef){ _courseListRef.off(); _courseListRef=null; }
+  if(!universityId) return;
+  _courseListRef = db.ref(`medistudy_courses/${universityId}`);
+  _courseListRef.on('value', function(snap){
+    if(adminUnlocked) return; // admin/editor stay on the full unscoped dataset
+    const d = snap.val();
+    if(!d) return;
+    courses = d;
+    saveLocal();
+    if(document.getElementById('page-material').classList.contains('active')) renderMaterial();
+  });
+}
 let _courseContentRef = null;
-function subscribeToCourseContent(courseId){
+function subscribeToCourseContent(universityId, courseId){
   if(!db) return;
   if(_courseContentRef){ _courseContentRef.off(); _courseContentRef=null; }
-  if(!courseId) return;
-  _courseContentRef = db.ref(`medistudy_content/${SYNC_UNIVERSITY_ID}/${courseId}`);
+  if(!universityId || !courseId) return;
+  _courseContentRef = db.ref(`medistudy_content/${universityId}/${courseId}`);
   _courseContentRef.on('value', function(snap){
     if(adminUnlocked) return; // admin/editor stay on the full unscoped dataset
     const d = snap.val();
@@ -318,37 +339,61 @@ function subscribeToCourseContent(courseId){
   });
 }
 
-// One-time full pull for admin/editor use — they manage ALL courses, not just one,
-// so they always need the complete (unscoped) dataset regardless of what the
-// student-facing scoped listener above has loaded. Kept fresh by the dual-write
-// in pushToFirebase(). cb runs after the data lands (or immediately if offline).
+// One-time full pull for admin/editor use — they manage ALL courses in whichever
+// university they've selected in the admin panel, not just one course. Ulyanovsk
+// still has the legacy flat node as its always-fresh source (kept so by the
+// dual-write in pushToFirebase); any other university has no such node and is
+// read straight from the scoped structure instead. cb runs once data lands (or
+// immediately if offline).
 function ensureFullAdminDataLoaded(cb){
   if(!fbConnected||!db){ if(cb)cb(); return; }
-  db.ref('medistudy').once('value').then(snap=>{
-    const d = snap.val();
-    if(d){
-      courses=d.courses||courses; subjects=d.subjects||subjects; folders=d.folders||folders;
-      notes=d.notes||notes; videos=d.videos||videos;
-      saveLocal();
-    }
+  const uid = (typeof ADMIN_ACTIVE_UNIVERSITY_ID!=='undefined' && ADMIN_ACTIVE_UNIVERSITY_ID) ? ADMIN_ACTIVE_UNIVERSITY_ID : DEFAULT_UNIVERSITY_ID;
+  if(uid===DEFAULT_UNIVERSITY_ID){
+    db.ref('medistudy').once('value').then(snap=>{
+      const d = snap.val();
+      if(d){
+        courses=d.courses||courses; subjects=d.subjects||subjects; folders=d.folders||folders;
+        notes=d.notes||notes; videos=d.videos||videos;
+        saveLocal();
+      }
+      if(cb)cb();
+    }).catch(()=>{ if(cb)cb(); });
+    return;
+  }
+  Promise.all([
+    db.ref(`medistudy_courses/${uid}`).once('value'),
+    db.ref(`medistudy_content/${uid}`).once('value')
+  ]).then(([cSnap,contentSnap])=>{
+    courses = cSnap.val() || [];
+    const content = contentSnap.val() || {};
+    let allSubjects=[],allFolders=[],allNotes=[],allVideos=[];
+    Object.values(content).forEach(c=>{
+      if(c.subjects)allSubjects=allSubjects.concat(c.subjects);
+      if(c.folders)allFolders=allFolders.concat(c.folders);
+      if(c.notes)allNotes=allNotes.concat(c.notes);
+      if(c.videos)allVideos=allVideos.concat(c.videos);
+    });
+    subjects=allSubjects; folders=allFolders; notes=allNotes; videos=allVideos;
+    saveLocal();
     if(cb)cb();
   }).catch(()=>{ if(cb)cb(); });
 }
 
 initFirebase(function(){
   if(!db) return;
-  // Lightweight — just the course list, so students can see/pick a course even
-  // before their own course content has synced.
-  db.ref(`medistudy_courses/${SYNC_UNIVERSITY_ID}`).on('value', function(snap){
-    if(adminUnlocked) return; // admin/editor stay on the full unscoped dataset
+  // Always-on, lightweight — the university list, so students can pick one.
+  db.ref('medistudy_universities').on('value', function(snap){
     const d = snap.val();
     if(!d) return;
-    courses = d;
-    saveLocal();
-    if(document.getElementById('page-material').classList.contains('active')) renderMaterial();
+    universities = d;
+    localStorage.setItem('ms4_universities', JSON.stringify(universities));
   });
+  const myUni = getStudentUniversityId();
+  // Lightweight — just the course list, so students can see/pick a course even
+  // before their own course content has synced.
+  subscribeToUniversityCourses(myUni);
   // Scoped — only the student's own course's content, not everyone else's.
-  subscribeToCourseContent(getStudentCourseId());
+  subscribeToCourseContent(myUni, getStudentCourseId());
 });
 // ═══════════════ PWA ═══════════════
 let deferredPrompt = null;
@@ -487,7 +532,7 @@ window.addEventListener('beforeinstallprompt', e => {
 });
 
 // ═══════════════ PROFILE ═══════════════
-let userProfile = JSON.parse(localStorage.getItem('ms_profile') || '{"name":"","course":"","gender":"","age":""}');
+let userProfile = JSON.parse(localStorage.getItem('ms_profile') || '{"name":"","university":"","course":"","gender":"","age":""}');
 
 function getInitials(name){
   if(!name) return '👤';
@@ -521,11 +566,24 @@ function showProfileView(){
   updateAuthUI();
   document.getElementById('profile-edit-form').style.display='none';
 }
+function populateProfileCourseOptions(universityId, selectedCourseId){
+  const courseSel=document.getElementById('profile-course-inp');
+  if(!universityId||!db){ courseSel.innerHTML='<option value="">Select your course...</option>'; return; }
+  courseSel.innerHTML='<option value="">Loading courses...</option>';
+  db.ref('medistudy_courses/'+universityId).once('value').then(snap=>{
+    const list = snap.val()||[];
+    courseSel.innerHTML='<option value="">Select your course...</option>'+list.map(c=>`<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('');
+    courseSel.value = list.some(c=>c.id===selectedCourseId) ? selectedCourseId : '';
+  }).catch(()=>{ courseSel.innerHTML='<option value="">Select your course...</option>'; });
+}
 function showProfileEdit(){
   document.getElementById('profile-name-inp').value = userProfile.name;
-  const courseSel=document.getElementById('profile-course-inp');
-  courseSel.innerHTML='<option value="">Select your course...</option>'+courses.map(c=>`<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('');
-  courseSel.value = courses.find(c=>c.id===userProfile.course) ? userProfile.course : '';
+  const uniSel=document.getElementById('profile-university-inp');
+  uniSel.innerHTML='<option value="">Select your university...</option>'+universities.map(u=>`<option value="${u.id}">${escapeHTML(u.name)}</option>`).join('');
+  const currentUni = userProfile.university || DEFAULT_UNIVERSITY_ID;
+  uniSel.value = universities.some(u=>u.id===currentUni) ? currentUni : '';
+  uniSel.onchange = ()=>populateProfileCourseOptions(uniSel.value, '');
+  populateProfileCourseOptions(uniSel.value, userProfile.course);
   document.getElementById('profile-gender-inp').value = userProfile.gender||'';
   document.getElementById('profile-age-inp').value = userProfile.age||'';
   document.getElementById('profile-loggedout-view').style.display='none';
@@ -534,7 +592,9 @@ function showProfileEdit(){
 }
 function saveProfile(){
   const prevCourse=userProfile.course;
+  const prevUniversity=userProfile.university;
   userProfile.name = document.getElementById('profile-name-inp').value.trim();
+  userProfile.university = document.getElementById('profile-university-inp').value;
   userProfile.course = document.getElementById('profile-course-inp').value;
   userProfile.gender = document.getElementById('profile-gender-inp').value;
   const ageVal = document.getElementById('profile-age-inp').value;
@@ -544,10 +604,12 @@ function saveProfile(){
   updateProfileUI();
   showProfileView();
   if(typeof trackCourseUserProperty==='function')trackCourseUserProperty();
-  // If the course changed, refresh any course-locked pages so the switch takes effect immediately
-  if(prevCourse!==userProfile.course){
-    const lc=getStudentCourseId();
-    subscribeToCourseContent(lc);
+  // If university or course changed, resubscribe and refresh any locked pages
+  if(prevCourse!==userProfile.course || prevUniversity!==userProfile.university){
+    const myUni=getStudentUniversityId();
+    const lc=userProfile.course || null; // trust the just-picked value — the global `courses` array may still lag behind a university switch
+    if(prevUniversity!==userProfile.university) subscribeToUniversityCourses(myUni);
+    subscribeToCourseContent(myUni, lc);
     smView = lc?{level:'subjects',courseId:lc}:{level:'courses'};
     if(document.getElementById('page-material').classList.contains('active'))renderMaterial();
     if(document.getElementById('page-videos').classList.contains('active'))renderVideosPage();

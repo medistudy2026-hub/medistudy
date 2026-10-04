@@ -120,15 +120,15 @@
         <input type="text" id="profile-name-inp" class="lb-input" placeholder="e.g. Ankit Sahu" style="margin-bottom:0;">
       </div>
       <div class="form-group" style="margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:5px;">UNIVERSITY</label>
+        <select id="profile-university-inp" class="lb-input" style="margin-bottom:0;">
+          <option value="">Select your university...</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:10px;">
         <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:5px;">COURSE</label>
         <select id="profile-course-inp" class="lb-input" style="margin-bottom:0;">
           <option value="">Select your course...</option>
-          <option value="1st Course">1st Course</option>
-          <option value="2nd Course">2nd Course</option>
-          <option value="3rd Course">3rd Course</option>
-          <option value="4th Course">4th Course</option>
-          <option value="5th Course">5th Course</option>
-          <option value="6th Course">6th Course</option>
         </select>
       </div>
       <div class="form-group" style="margin-bottom:10px;">
@@ -600,7 +600,12 @@
       </div>
       <!-- STRUCTURE -->
       <div class="aform active" id="aform-structure">
-        <div class="section-label">📘 Courses</div>
+        <div class="section-label">🏫 University</div>
+        <div class="form-group" style="margin-bottom:8px;"><label>MANAGING</label><select id="admin-university-sel" onchange="switchAdminUniversity()"></select></div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Everything below (Courses, Subjects, Folders, and Push) applies to whichever university is selected above.</div>
+        <div class="add-inline"><input type="text" id="new-uni-name" placeholder="New university name"><button onclick="addUniversity()">+ Add Uni</button></div>
+        <div class="add-inline" style="margin-top:4px;"><input type="text" id="new-uni-id" placeholder="short id e.g. ksmu"></div>
+        <div class="section-label" style="margin-top:18px;">📘 Courses</div>
         <div id="admin-courses-list"></div>
         <div class="add-inline"><input type="text" id="new-course-name" placeholder="e.g. 1st Course"><button onclick="addCourse()">+ Add</button></div>
         <div class="section-label" style="margin-top:18px;">🔬 Subjects</div>
