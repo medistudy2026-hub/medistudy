@@ -585,6 +585,11 @@
       <div id="admin-signedin-warning" style="display:none;background:rgba(232,93,56,0.15);border:1px solid #e85d38;color:#e85d38;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:12px;font-weight:600;">
         ⚠️ You're not signed in with your account. Saves will fail — go to Login and sign in with your email/Google first, then come back here.
       </div>
+      <div id="admin-university-bar" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 12px;margin-bottom:12px;">
+        <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:5px;">🏫 MANAGING UNIVERSITY</label>
+        <select id="admin-university-sel" onchange="switchAdminUniversity()" style="width:100%;"></select>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;">Courses, Subjects, Notes, Videos, MCQ, and Push all apply to whichever university is selected here — on every tab.</div>
+      </div>
       <div class="admin-tabs">
         <div class="atab active" id="atab-structure" onclick="switchATab('structure',this)">🏗️ Structure</div>
         <div class="atab" id="atab-dashboard" onclick="switchATab('dashboard',this)">📊 Dashboard</div>
@@ -600,9 +605,8 @@
       </div>
       <!-- STRUCTURE -->
       <div class="aform active" id="aform-structure">
-        <div class="section-label">🏫 University</div>
-        <div class="form-group" style="margin-bottom:8px;"><label>MANAGING</label><select id="admin-university-sel" onchange="switchAdminUniversity()"></select></div>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Everything below (Courses, Subjects, Folders, and Push) applies to whichever university is selected above.</div>
+        <div class="section-label">🏫 Add a New University</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Use the "Managing University" bar above to switch which university you're editing. Use this only to create a brand new one.</div>
         <div class="add-inline"><input type="text" id="new-uni-name" placeholder="New university name"><button onclick="addUniversity()">+ Add Uni</button></div>
         <div class="add-inline" style="margin-top:4px;"><input type="text" id="new-uni-id" placeholder="short id e.g. ksmu"></div>
         <div class="section-label" style="margin-top:18px;">📘 Courses</div>
