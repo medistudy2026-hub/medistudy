@@ -312,9 +312,7 @@ function subscribeToUniversityCourses(universityId){
   _courseListRef = db.ref(`medistudy_courses/${universityId}`);
   _courseListRef.on('value', function(snap){
     if(adminUnlocked) return; // admin/editor stay on the full unscoped dataset
-    const d = snap.val();
-    if(!d) return;
-    courses = d;
+    courses = snap.val() || [];
     saveLocal();
     if(document.getElementById('page-material').classList.contains('active')) renderMaterial();
   });
@@ -327,8 +325,10 @@ function subscribeToCourseContent(universityId, courseId){
   _courseContentRef = db.ref(`medistudy_content/${universityId}/${courseId}`);
   _courseContentRef.on('value', function(snap){
     if(adminUnlocked) return; // admin/editor stay on the full unscoped dataset
-    const d = snap.val();
-    if(!d) return;
+    // No early-return on empty snapshot: a course with nothing in it yet (e.g. a
+    // freshly-added university) must clear out whatever the PREVIOUS course had
+    // loaded, not silently keep showing it.
+    const d = snap.val() || {};
     subjects = d.subjects || [];
     folders  = d.folders  || [];
     notes    = d.notes    || [];
