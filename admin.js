@@ -364,10 +364,15 @@ function saveGeminiKey(){
 })();
 
 // ═══════════════ COURSE-SCOPED SYNC MIGRATION (one-time, pure copy) ═══════════════
-// Copies the current monolithic 'medistudy' node into medistudy_courses +
-// medistudy_content/<courseId>/{subjects,folders,notes,videos}. Does NOT touch
-// the old node, and does NOT change what students sync yet — that's a
-// separate later step once this new structure is confirmed correct.
+// Copies the current monolithic 'medistudy' node into a university+course-scoped
+// structure: medistudy_universities, medistudy_courses/<universityId>, and
+// medistudy_content/<universityId>/<courseId>/{subjects,folders,notes,videos}.
+// All of today's data belongs to Ulyanovsk State University (id 'usu') — when a
+// second university is added later, it slots in alongside this one, no rebuild needed.
+// Does NOT touch the old 'medistudy' node, and does NOT change what students sync
+// yet — that's a separate later step once this new structure is confirmed correct.
+const MIGRATION_UNIVERSITY = {id:'usu', name:'Ulyanovsk State University'};
+
 async function migrateToScopedSync(){
   const statusEl = document.getElementById('fb-migrate-status');
   const btn = document.getElementById('fb-migrate-btn');
@@ -375,7 +380,7 @@ async function migrateToScopedSync(){
     statusEl.innerHTML = '<span style="color:#e85d38">❌ Not connected to Firebase. Connect first.</span>';
     return;
   }
-  if(!confirm('This reads your current data and copies it into the new course-scoped structure. Your existing "medistudy" node stays untouched, and nothing changes for students yet. Continue?')) return;
+  if(!confirm(`This reads your current data and copies it into the new university+course-scoped structure, under "${MIGRATION_UNIVERSITY.name}". Your existing "medistudy" node stays untouched, and nothing changes for students yet. Continue?`)) return;
 
   btn.disabled = true;
   statusEl.innerHTML = '⏳ Reading current data...';
@@ -400,9 +405,17 @@ async function migrateToScopedSync(){
       return;
     }
 
-    statusEl.innerHTML = '⏳ Writing course-scoped content...';
+    statusEl.innerHTML = '⏳ Writing university + course-scoped content...';
+    const uid = MIGRATION_UNIVERSITY.id;
     const updates = {};
-    updates['medistudy_courses'] = srcCourses;
+
+    // University list: merge with whatever's already there (so re-running this later
+    // for a second university doesn't wipe out the first one's entry)
+    const existingUnis = (await db.ref('medistudy_universities').once('value')).val() || [];
+    const uniList = existingUnis.some(u=>u.id===uid) ? existingUnis : [...existingUnis, MIGRATION_UNIVERSITY];
+    updates['medistudy_universities'] = uniList;
+
+    updates[`medistudy_courses/${uid}`] = srcCourses;
     let subjectCount=0, folderCount=0, noteCount=0, videoCount=0;
 
     srcCourses.forEach(course=>{
@@ -411,10 +424,10 @@ async function migrateToScopedSync(){
       const cFolders  = srcFolders.filter(f=>f.courseId===cid);
       const cNotes    = srcNotes.filter(n=>n.courseId===cid);
       const cVideos   = srcVideos.filter(v=>v.courseId===cid);
-      updates[`medistudy_content/${cid}/subjects`] = cSubjects;
-      updates[`medistudy_content/${cid}/folders`]  = cFolders;
-      updates[`medistudy_content/${cid}/notes`]    = cNotes;
-      updates[`medistudy_content/${cid}/videos`]   = cVideos;
+      updates[`medistudy_content/${uid}/${cid}/subjects`] = cSubjects;
+      updates[`medistudy_content/${uid}/${cid}/folders`]  = cFolders;
+      updates[`medistudy_content/${uid}/${cid}/notes`]    = cNotes;
+      updates[`medistudy_content/${uid}/${cid}/videos`]   = cVideos;
       subjectCount += cSubjects.length;
       folderCount  += cFolders.length;
       noteCount    += cNotes.length;
@@ -428,11 +441,11 @@ async function migrateToScopedSync(){
 
     await db.ref().update(updates);
 
-    let msg = `✅ Migration complete!<br>${srcCourses.length} course${srcCourses.length!==1?'s':''}, ${subjectCount} subjects, ${folderCount} folders, ${noteCount} notes, ${videoCount} videos copied into medistudy_content.`;
+    let msg = `✅ Migration complete for <strong>${MIGRATION_UNIVERSITY.name}</strong>!<br>${srcCourses.length} course${srcCourses.length!==1?'s':''}, ${subjectCount} subjects, ${folderCount} folders, ${noteCount} notes, ${videoCount} videos copied into medistudy_content/${uid}.`;
     if(unassigned>0){
       msg += `<br><span style="color:var(--accent)">⚠️ ${unassigned} item(s) had a courseId that didn't match any course and were skipped — worth checking in Firebase Console.</span>`;
     }
-    msg += `<br><br>Your original <strong>medistudy</strong> node is untouched — the app is still using it, nothing has changed for students. Go check <strong>medistudy_courses</strong> and <strong>medistudy_content</strong> in Firebase Console to confirm the numbers above look right.`;
+    msg += `<br><br>Your original <strong>medistudy</strong> node is untouched — the app is still using it, nothing has changed for students. Go check <strong>medistudy_universities</strong>, <strong>medistudy_courses</strong>, and <strong>medistudy_content</strong> in Firebase Console to confirm the numbers above look right.`;
     statusEl.innerHTML = msg;
   }catch(e){
     statusEl.innerHTML = '<span style="color:#e85d38">❌ Migration failed: '+e.message+'</span>';
