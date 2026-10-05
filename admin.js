@@ -509,6 +509,45 @@ async function migrateToScopedSync(){
   btn.disabled = false;
 }
 
+// ═══════════════ QUIZ LEADERBOARD MIGRATION (one-time, pure copy) ═══════════════
+// Copies medistudy_quiz_lb/<courseId>/<uid> (old, course-only) into
+// medistudy_quiz_lb/<universityId>/<courseId>/<uid> (new, university+course).
+// All existing scores belong to Ulyanovsk since it's the only university with
+// students so far. Old entries are left in place, untouched, harmless.
+async function migrateQuizLeaderboard(){
+  const statusEl = document.getElementById('fb-lb-migrate-status');
+  if(!fbConnected||!db){ statusEl.innerHTML='<span style="color:#e85d38">❌ Not connected to Firebase.</span>'; return; }
+  if(!confirm('This copies all existing quiz leaderboard scores into the new university-scoped structure, under Ulyanovsk. The old entries are left as-is. Continue?')) return;
+
+  statusEl.innerHTML = '⏳ Reading current leaderboard...';
+  try{
+    const snap = await db.ref('medistudy_quiz_lb').once('value');
+    const d = snap.val();
+    if(!d){ statusEl.innerHTML = '<span style="color:#e85d38">❌ No leaderboard data found.</span>'; return; }
+
+    const updates = {};
+    let courseCount=0, scoreCount=0;
+    Object.keys(d).forEach(courseId=>{
+      // Skip anything that's already nested under a university id from a previous run
+      if(typeof d[courseId]!=='object') return;
+      const entries = d[courseId];
+      const looksLikeScores = Object.values(entries).some(v=>v && typeof v.best!=='undefined');
+      if(!looksLikeScores) return; // already university-scoped, or not score data — leave alone
+      updates[`medistudy_quiz_lb/${DEFAULT_UNIVERSITY_ID}/${courseId}`] = entries;
+      courseCount++;
+      scoreCount += Object.keys(entries).length;
+    });
+
+    if(courseCount===0){ statusEl.innerHTML = '✅ Nothing to migrate — leaderboard already looks university-scoped.'; return; }
+
+    statusEl.innerHTML = '⏳ Writing scoped leaderboard...';
+    await db.ref().update(updates);
+    statusEl.innerHTML = `✅ Migrated ${scoreCount} score${scoreCount!==1?'s':''} across ${courseCount} course${courseCount!==1?'s':''} into medistudy_quiz_lb/${DEFAULT_UNIVERSITY_ID}. Old entries left untouched.`;
+  }catch(e){
+    statusEl.innerHTML = '<span style="color:#e85d38">❌ Migration failed: '+e.message+'</span>';
+  }
+}
+
 // ═══════════════ EMERGENCY RESTORE ═══════════════
 // Pulls a single course's content back from medistudy_content/<courseId> — the
 // original, never-touched-since flat backup made at the very first migration —

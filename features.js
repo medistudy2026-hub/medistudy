@@ -1245,7 +1245,8 @@ function renderQuizLB(){
   const courseId=lc||(sel?sel.value:'');
   if(!courseId){list.innerHTML='<div class="empty-state">📭 Select a course to see rankings.</div>';return;}
   if(!db){list.innerHTML='<div class="empty-state">📭 Not connected.</div>';return;}
-  db.ref('medistudy_quiz_lb/'+courseId).once('value').then(snap=>{
+  const lbUniId=getStudentUniversityId();
+  db.ref('medistudy_quiz_lb/'+lbUniId+'/'+courseId).once('value').then(snap=>{
     const d=snap.val();
     if(!d){list.innerHTML='<div class="empty-state">📭 No quiz scores yet for this course. Be the first!</div>';return;}
     const arr=Object.values(d).sort((a,b)=>b.best-a.best).slice(0,10);
@@ -1675,7 +1676,7 @@ function showQuizResult(){
   if(lbUser){
     if(!currentUser) currentUser=lbUser; // self-heal our cached copy
     if(db&&currentQuizSet&&currentQuizSet.courseId){
-      const lbRef=db.ref('medistudy_quiz_lb/'+currentQuizSet.courseId+'/'+lbUser.uid);
+      const lbRef=db.ref('medistudy_quiz_lb/'+getStudentUniversityId()+'/'+currentQuizSet.courseId+'/'+lbUser.uid);
       lbRef.once('value').then(snap=>{
         const existing=snap.val();
         if(!existing||pct>existing.best){

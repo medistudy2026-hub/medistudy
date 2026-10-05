@@ -898,6 +898,19 @@ Answer: B — optional explanation
           <div id="fb-migrate-status" style="font-size:12px;margin-top:8px;line-height:1.6;"></div>
         </div>
 
+        <div style="background:#1a0606;border:1px solid var(--blue);border-radius:10px;padding:14px;margin-top:16px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px;color:var(--blue);">🏆 Migrate Quiz Leaderboard</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:10px;">
+            One-time step. Quiz leaderboard scores are now scoped by university too
+            (<code>medistudy_quiz_lb/&lt;universityId&gt;/&lt;courseId&gt;</code>), not just course — two different
+            universities' question banks shouldn't rank against each other. This copies all existing scores
+            (currently all Ulyanovsk's) into the new structure. Run this once; safe to leave the old
+            <code>medistudy_quiz_lb/&lt;courseId&gt;</code> entries behind afterward — nothing reads them anymore.
+          </div>
+          <button class="submit-btn" onclick="migrateQuizLeaderboard()" style="background:var(--blue);color:#fff;">🏆 Migrate Leaderboard</button>
+          <div id="fb-lb-migrate-status" style="font-size:12px;margin-top:8px;line-height:1.6;"></div>
+        </div>
+
         <div style="background:#1a0606;border:1px solid #e85d38;border-radius:10px;padding:14px;margin-top:16px;">
           <div style="font-size:13px;font-weight:700;margin-bottom:6px;color:#e85d38;">🩹 Emergency Restore (from original backup)</div>
           <div style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:10px;">
