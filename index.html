@@ -897,6 +897,20 @@ Answer: B — optional explanation
           <button class="submit-btn" id="fb-migrate-btn" onclick="migrateToScopedSync()" style="background:var(--accent);color:#000;">🚚 Migrate to Scoped Sync</button>
           <div id="fb-migrate-status" style="font-size:12px;margin-top:8px;line-height:1.6;"></div>
         </div>
+
+        <div style="background:#1a0606;border:1px solid #e85d38;border-radius:10px;padding:14px;margin-top:16px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px;color:#e85d38;">🩹 Emergency Restore (from original backup)</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:10px;">
+            If a course's content ever goes missing for the university currently selected above, this pulls it back
+            from <code>medistudy_content/&lt;courseId&gt;</code> — the untouched original copy made at your very
+            first migration, which nothing since has ever written to. This <strong>overwrites</strong> that course's
+            current content (both the new scoped copy and, for Ulyanovsk, the old <code>medistudy</code> node) with
+            that backup. Only use this on a course you've confirmed is actually broken.
+          </div>
+          <div class="form-group" style="margin-bottom:8px;"><label>COURSE ID (e.g. c1, c2, c3)</label><input type="text" id="restore-course-id" placeholder="c2"></div>
+          <button class="submit-btn" onclick="restoreCourseFromLegacyBackup()" style="background:#e85d38;color:#fff;">🩹 Restore This Course</button>
+          <div id="fb-restore-status" style="font-size:12px;margin-top:8px;line-height:1.6;"></div>
+        </div>
       </div>
     </div>
   </div>

@@ -509,6 +509,53 @@ async function migrateToScopedSync(){
   btn.disabled = false;
 }
 
+// ═══════════════ EMERGENCY RESTORE ═══════════════
+// Pulls a single course's content back from medistudy_content/<courseId> — the
+// original, never-touched-since flat backup made at the very first migration —
+// into the live scoped structure. Also patches the old flat 'medistudy' node
+// (for Ulyanovsk) so the admin's next data load doesn't re-pull stale content
+// and undo the restore.
+async function restoreCourseFromLegacyBackup(){
+  const statusEl = document.getElementById('fb-restore-status');
+  const courseId = document.getElementById('restore-course-id').value.trim();
+  if(!courseId){ statusEl.innerHTML='<span style="color:#e85d38">❌ Enter a course id first.</span>'; return; }
+  if(!fbConnected||!db){ statusEl.innerHTML='<span style="color:#e85d38">❌ Not connected to Firebase.</span>'; return; }
+  if(!confirm(`This overwrites "${courseId}"'s current content for the selected university with whatever is saved in the old medistudy_content/${courseId} backup. Continue?`)) return;
+
+  statusEl.innerHTML = '⏳ Reading backup...';
+  try{
+    const snap = await db.ref('medistudy_content/'+courseId).once('value');
+    const d = snap.val();
+    if(!d){ statusEl.innerHTML = '<span style="color:#e85d38">❌ No backup found at medistudy_content/'+courseId+'.</span>'; return; }
+
+    const uid = ADMIN_ACTIVE_UNIVERSITY_ID;
+    statusEl.innerHTML = '⏳ Restoring into medistudy_content/'+uid+'/'+courseId+'...';
+    const updates = {};
+    updates[`medistudy_content/${uid}/${courseId}`] = d;
+    await db.ref().update(updates);
+
+    if(uid===DEFAULT_UNIVERSITY_ID){
+      statusEl.innerHTML = '⏳ Patching the old medistudy node too, for consistency...';
+      const oldSnap = await db.ref('medistudy').once('value');
+      const old = oldSnap.val() || {courses:[],subjects:[],folders:[],notes:[],videos:[]};
+      const keep = arr => (arr||[]).filter(x=>x.courseId!==courseId);
+      const merged = {
+        courses: old.courses||[],
+        subjects: [...keep(old.subjects), ...(d.subjects||[])],
+        folders:  [...keep(old.folders),  ...(d.folders||[])],
+        notes:    [...keep(old.notes),    ...(d.notes||[])],
+        videos:   [...keep(old.videos),   ...(d.videos||[])],
+        updatedAt: Date.now()
+      };
+      await db.ref('medistudy').set(merged);
+    }
+
+    statusEl.innerHTML = `✅ Restored <strong>${courseId}</strong> — ${(d.subjects||[]).length} subjects, ${(d.folders||[]).length} folders, ${(d.notes||[]).length} notes, ${(d.videos||[]).length} videos. Close and reopen the admin panel to see it reflected.`;
+  }catch(e){
+    statusEl.innerHTML = '<span style="color:#e85d38">❌ Restore failed: '+e.message+'</span>';
+  }
+}
+
 document.getElementById('admin-modal').addEventListener('click',function(e){if(e.target===this)closeAdmin();});
 
 function postAnnouncement(){
