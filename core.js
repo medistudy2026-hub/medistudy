@@ -127,11 +127,16 @@ function getStudentUniversityId(){
   return DEFAULT_UNIVERSITY_ID;
 }
 
+let _adminDataLoading = false; // true while ensureFullAdminDataLoaded() is mid-fetch after a university switch
 function pushToFirebase(successId,_retries){
   _retries = _retries||0;
   if(!fbConnected||!db){
     if(_retries<10){ setTimeout(()=>pushToFirebase(successId,_retries+1), 500); return; }
     alert('Still connecting to the server. Please check your internet connection and try again in a few seconds.');
+    return;
+  }
+  if(_adminDataLoading){
+    alert('Still loading this university\'s data — please wait a second and try Push again, so you don\'t push stale data over the real content.');
     return;
   }
   const uid = (typeof ADMIN_ACTIVE_UNIVERSITY_ID!=='undefined' && ADMIN_ACTIVE_UNIVERSITY_ID) ? ADMIN_ACTIVE_UNIVERSITY_ID : DEFAULT_UNIVERSITY_ID;
@@ -348,6 +353,8 @@ function subscribeToCourseContent(universityId, courseId){
 function ensureFullAdminDataLoaded(cb){
   if(!fbConnected||!db){ if(cb)cb(); return; }
   const uid = (typeof ADMIN_ACTIVE_UNIVERSITY_ID!=='undefined' && ADMIN_ACTIVE_UNIVERSITY_ID) ? ADMIN_ACTIVE_UNIVERSITY_ID : DEFAULT_UNIVERSITY_ID;
+  _adminDataLoading = true;
+  const done = ()=>{ _adminDataLoading=false; if(cb)cb(); };
   if(uid===DEFAULT_UNIVERSITY_ID){
     db.ref('medistudy').once('value').then(snap=>{
       const d = snap.val();
@@ -356,8 +363,8 @@ function ensureFullAdminDataLoaded(cb){
         notes=d.notes||notes; videos=d.videos||videos;
         saveLocal();
       }
-      if(cb)cb();
-    }).catch(()=>{ if(cb)cb(); });
+      done();
+    }).catch(done);
     return;
   }
   Promise.all([
@@ -375,8 +382,8 @@ function ensureFullAdminDataLoaded(cb){
     });
     subjects=allSubjects; folders=allFolders; notes=allNotes; videos=allVideos;
     saveLocal();
-    if(cb)cb();
-  }).catch(()=>{ if(cb)cb(); });
+    done();
+  }).catch(done);
 }
 
 initFirebase(function(){
