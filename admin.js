@@ -26,6 +26,21 @@ function switchAdminUniversity(){
   localStorage.setItem('ms4_admin_uni', ADMIN_ACTIVE_UNIVERSITY_ID);
   ensureFullAdminDataLoaded(()=>{populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();});
 }
+function populateAnnouncementAudienceSelect(){
+  const sel=document.getElementById('ann-audience');
+  if(!sel) return;
+  function render(){
+    const prev=sel.value;
+    sel.innerHTML = '<option value="">🌐 All Universities</option>' + universities.map(u=>`<option value="${u.id}">🏫 ${escapeHTML(u.name)} only</option>`).join('');
+    sel.value = universities.some(u=>u.id===prev) ? prev : '';
+  }
+  if(universities.length || !db){ render(); return; }
+  db.ref('medistudy_universities').once('value').then(snap=>{
+    const d=snap.val();
+    if(d){ universities=d; localStorage.setItem('ms4_universities', JSON.stringify(universities)); }
+    render();
+  }).catch(render);
+}
 function addUniversity(){
   const nameInp=document.getElementById('new-uni-name'), idInp=document.getElementById('new-uni-id');
   const name=nameInp.value.trim(), id=idInp.value.trim().toLowerCase();
@@ -114,7 +129,7 @@ function switchATab(tab,el){
   if(tab==='notes'){updateNoteSubjects();updateNoteFolders();}
   if(tab==='videos')updateVidSubjects();
   if(tab==='firebase')updateFBStatus();
-  if(tab==='announce')loadAdminAnnouncements();
+  if(tab==='announce'){loadAdminAnnouncements();populateAnnouncementAudienceSelect();}
   if(tab==='essentials')loadAdminEssentials();
   if(tab==='mcq'){loadAdminMCQSets();populateMCQSubjectDropdowns();}
   if(tab==='students')loadStudentsList();
@@ -602,11 +617,12 @@ function postAnnouncement(){
   const title=document.getElementById('ann-title').value.trim();
   const msg=document.getElementById('ann-msg').value.trim();
   const type=document.getElementById('ann-type').value;
+  const universityId=document.getElementById('ann-audience').value; // '' = all universities
   const days=parseInt(document.getElementById('ann-expiry').value)||3;
   if(!title||!msg){alert('Fill in title and message.');return;}
   const expiry=Date.now()+(days*24*60*60*1000);
   const id='ann_'+Date.now();
-  db.ref('medistudy_announcements/'+id).set({id,title,msg,type,expiry,ts:Date.now()})
+  db.ref('medistudy_announcements/'+id).set({id,title,msg,type,universityId,expiry,ts:Date.now()})
     .then(()=>{
       document.getElementById('ann-title').value='';
       document.getElementById('ann-msg').value='';
@@ -629,10 +645,11 @@ function loadAdminAnnouncements(){
       const a=c.val();
       const expired=a.expiry<now;
       const col=ANN_COLORS[a.type]||ANN_COLORS.info;
+      const uniName = a.universityId ? ((universities.find(u=>u.id===a.universityId)||{}).name || a.universityId) : null;
       html+=`<div style="background:${col.bg};border:1px solid ${col.border};border-radius:8px;padding:10px;margin-bottom:8px;position:relative;">
         <div style="font-weight:700;font-size:12px;color:${col.color};">${escapeHTML(a.title)} ${expired?'<span style="color:#e85d38;">[EXPIRED]</span>':''}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:2px;">${escapeHTML(a.msg)}</div>
-        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Expires: ${new Date(a.expiry).toLocaleDateString()}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">${uniName?('🏫 '+escapeHTML(uniName)+' only'):'🌐 All Universities'} · Expires: ${new Date(a.expiry).toLocaleDateString()}</div>
         <button onclick="deleteAnnouncement('${a.id}')" style="position:absolute;top:8px;right:8px;background:#e85d38;border:none;border-radius:5px;color:#fff;font-size:10px;padding:2px 7px;cursor:pointer;">Delete</button>
       </div>`;
     });

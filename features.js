@@ -1476,13 +1476,21 @@ function loadMyFeedback(){
 function checkAnnouncements(){
   if(!db)return;
   const dismissed=JSON.parse(localStorage.getItem('ms_dismissed_anns')||'[]');
-  db.ref('medistudy_announcements').orderByChild('expiry').startAt(Date.now()).limitToLast(1).once('value',snap=>{
+  const myUni=getStudentUniversityId();
+  // Fetch more than 1 candidate now, since some may not apply to this student's
+  // university — filter client-side, keeping the one with the latest expiry
+  // (snap.forEach iterates ascending by expiry, so the last match wins, same
+  // tie-break as the old single-item query).
+  db.ref('medistudy_announcements').orderByChild('expiry').startAt(Date.now()).limitToLast(20).once('value',snap=>{
     if(!snap||!snap.exists())return;
+    let best=null;
     snap.forEach(c=>{
       const a=c.val();
       if(dismissed.includes(a.id))return;
-      showAnnouncementBanner(a);
+      if(a.universityId && a.universityId!==myUni)return; // scoped to a different university
+      best=a;
     });
+    if(best) showAnnouncementBanner(best);
   });
 }
 
