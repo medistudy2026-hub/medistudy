@@ -2260,7 +2260,7 @@ function initBatchChat(){
   if(fbConnected && db){
     chatInitAttempts = 0;
     if(chatInitTimer){ clearTimeout(chatInitTimer); chatInitTimer=null; }
-    cleanOldChatMessages(); // silently remove messages older than 3 days
+    trimChatMessages(); // silently keep only the most recent 50 messages
     if(!chatUserName){
       showChatEl('chat-name-setup');
     } else {
@@ -2315,19 +2315,6 @@ function changeChatName(){
 
 let _chatRef = null; // store the exact ref used for .on() so .off() works correctly
 
-function cleanOldChatMessages(){
-  if(!db) return;
-  const cutoff = Date.now() - (3 * 24 * 60 * 60 * 1000); // 3 days ago
-  db.ref('medistudy_chat').orderByChild('ts').endAt(cutoff).once('value', snap=>{
-    if(!snap || !snap.exists()) return;
-    const updates = {};
-    snap.forEach(c=>{ updates[c.key] = null; }); // null = delete in Firebase
-    if(Object.keys(updates).length > 0){
-      db.ref('medistudy_chat').update(updates);
-    }
-  });
-}
-
 function startBatchChatListener(){
   if(!db) return;
   // Remove old listener using the SAME ref object
@@ -2339,7 +2326,7 @@ function startBatchChatListener(){
   const msgEl=document.getElementById('batch-msgs');
   msgEl.innerHTML='<div style="text-align:center;padding:20px;font-size:13px;color:var(--muted)">Loading messages...</div>';
 
-  _chatRef = db.ref('medistudy_chat').limitToLast(50);
+  _chatRef = db.ref('medistudy_chat/'+getStudentUniversityId()).limitToLast(50);
   batchChatListener = _chatRef.on('value', snap=>{
     const msgs=[];
     if(snap && snap.exists()){
@@ -2390,8 +2377,10 @@ function sendBatchMsg(){
   msgEl.appendChild(tempDiv);
   msgEl.scrollTop=msgEl.scrollHeight;
 
-  db.ref('medistudy_chat').push({
+  db.ref('medistudy_chat/'+getStudentUniversityId()).push({
     name:chatUserName, text, ts:Date.now()
+  }).then(()=>{
+    trimChatMessages();
   }).catch(()=>{
     inp.value=text;
     tempDiv.remove();
@@ -2487,10 +2476,11 @@ function loadReactions(msgKey){
 
 function trimChatMessages(){
   if(!fbConnected||!db)return;
-  db.ref('medistudy_chat').once('value',snap=>{
+  const chatPath = 'medistudy_chat/'+getStudentUniversityId();
+  db.ref(chatPath).once('value',snap=>{
     const keys=[];snap.forEach(c=>keys.push(c.key));
-    if(keys.length>200){
-      keys.slice(0,keys.length-200).forEach(k=>db.ref('medistudy_chat/'+k).remove());
+    if(keys.length>50){
+      keys.slice(0,keys.length-50).forEach(k=>db.ref(chatPath+'/'+k).remove());
     }
   });
 }
