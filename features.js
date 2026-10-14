@@ -1091,6 +1091,7 @@ function renderFoldersList(c, activeTab){
         let html='';
         snap.forEach(c2=>{
           const m=c2.val();
+          if((m.universityId||DEFAULT_UNIVERSITY_ID)!==getStudentUniversityId()) return; // other university's set
           // Only show MCQs linked to this subject
           if(m.subjectId && m.subjectId!==filterSubjectId) return;
           // Also hide MCQs that are linked to a DIFFERENT subject (old MCQs with no subjectId show everywhere)
@@ -1573,6 +1574,7 @@ function showQuizHome(){
     let count=0;
     snap.forEach(c=>{
       const m=c.val();
+      if((m.universityId||DEFAULT_UNIVERSITY_ID)!==getStudentUniversityId())return; // other university's set
       if(lc && m.courseId!==lc)return;
       count++;
       html=`<div class="card" style="margin-bottom:10px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;" onclick="startQuiz('${m.id}')">

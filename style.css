@@ -449,3 +449,6 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 .note-menu-popup{position:fixed;z-index:2000;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.4);min-width:190px;display:flex;flex-direction:column;}
 .note-menu-popup button{background:none;border:none;color:var(--text);font-size:13px;text-align:left;padding:10px 12px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;}
 .note-menu-popup button:hover{background:var(--card);}
+
+.drag-handle{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;font-size:18px;line-height:1;padding:8px 10px 8px 2px;color:var(--muted);flex-shrink:0;}
+.manage-item.dragging{opacity:.9;border-color:var(--accent);box-shadow:0 4px 14px rgba(0,0,0,.45);position:relative;z-index:5;}

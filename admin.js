@@ -343,10 +343,10 @@ function renderNotesTree(){
       html+=`<details class="mt-subject"><summary>📘 ${escapeHTML(s.name)} <span class="mt-count">(${subjCount})</span></summary><div style="padding-left:14px;">`;
       folderKeys.forEach(fK=>{
         const fo=s.folders[fK];
-        const items=[...fo.items].sort((a,b)=>a.topic.localeCompare(b.topic));
-        html+=`<details class="mt-folder"><summary>📁 ${escapeHTML(fo.name)} <span class="mt-count">(${items.length})</span></summary><div style="padding-left:14px;padding-top:4px;">`;
+        const items=[...fo.items]; // keep stored order — this is exactly the order students see
+        html+=`<details class="mt-folder"><summary>📁 ${escapeHTML(fo.name)} <span class="mt-count">(${items.length})</span></summary><div class="reorder-list" style="padding-left:14px;padding-top:4px;">`;
         items.forEach(n=>{
-          html+=`<div class="manage-item" style="margin-bottom:6px;"><div><div class="mi-title">${escapeHTML(n.topic)}</div></div><div style="display:flex;gap:6px;"><button class="edit-btn" onclick="editNote('${n.id}')">✏️ Edit</button><button class="del-btn" onclick="delNote('${n.id}')">Delete</button></div></div>`;
+          html+=`<div class="manage-item" data-id="${n.id}" style="margin-bottom:6px;"><div class="drag-handle" title="Hold and drag to reorder">☰</div><div style="flex:1;min-width:0;"><div class="mi-title">${escapeHTML(n.topic)}</div></div><div style="display:flex;gap:6px;"><button class="edit-btn" onclick="editNote('${n.id}')">✏️ Edit</button><button class="del-btn" onclick="delNote('${n.id}')">Delete</button></div></div>`;
         });
         html+='</div></details>';
       });
@@ -562,6 +562,73 @@ async function migrateQuizLeaderboard(){
     statusEl.innerHTML = '<span style="color:#e85d38">❌ Migration failed: '+e.message+'</span>';
   }
 }
+
+// ═══════════════ DRAG TO REORDER NOTES (Manage tab) ═══════════════
+// Works with finger or mouse (pointer events). Drag the ☰ handle up/down inside
+// a folder. Order of the global `notes` array is what students see, so on drop
+// we rewrite that array: the folder's notes keep occupying the same slots, just
+// in the new order. Then tap "Save & Push" to publish.
+let _drag=null, _dragRaf=null;
+function _dragScrollParent(el){
+  let p=el.parentElement;
+  while(p&&p!==document.body){
+    const oy=getComputedStyle(p).overflowY;
+    if((oy==='auto'||oy==='scroll')&&p.scrollHeight>p.clientHeight) return p;
+    p=p.parentElement;
+  }
+  return document.scrollingElement||document.documentElement;
+}
+function _dragAutoScroll(){
+  if(!_drag) return;
+  const sp=_drag.scroller;
+  const r=sp===document.scrollingElement||sp===document.documentElement?{top:0,bottom:window.innerHeight}:sp.getBoundingClientRect();
+  const y=_drag.lastY, edge=60;
+  if(y<r.top+edge) sp.scrollTop-=14;
+  else if(y>r.bottom-edge) sp.scrollTop+=14;
+  _drag.raf=requestAnimationFrame(_dragAutoScroll);
+}
+function _dragMoveTo(y){
+  const {item,list}=_drag;
+  const sibs=[...list.children].filter(x=>x.classList.contains('manage-item')&&x!==item);
+  let before=null;
+  for(const s of sibs){const r=s.getBoundingClientRect(); if(y<r.top+r.height/2){before=s;break;}}
+  if(before){ if(item.nextElementSibling!==before) list.insertBefore(item,before); }
+  else if(list.lastElementChild!==item) list.appendChild(item);
+}
+function commitNoteOrder(list){
+  const ids=[...list.children].filter(x=>x.classList.contains('manage-item')).map(x=>x.dataset.id);
+  const idSet=new Set(ids), slots=[], byId={};
+  notes.forEach((n,i)=>{ if(idSet.has(n.id)){ slots.push(i); byId[n.id]=n; } });
+  if(slots.length!==ids.length) return; // safety: something doesn't line up, don't touch data
+  ids.forEach((id,k)=>{ notes[slots[k]]=byId[id]; });
+  saveLocal();
+}
+document.addEventListener('pointerdown',e=>{
+  const h=e.target.closest&&e.target.closest('.drag-handle'); if(!h||_drag) return;
+  const item=h.closest('.manage-item'), list=item&&item.parentElement;
+  if(!list||!list.classList.contains('reorder-list')) return;
+  e.preventDefault();
+  _drag={item,list,handle:h,pointerId:e.pointerId,lastY:e.clientY,scroller:_dragScrollParent(list)};
+  item.classList.add('dragging');
+  try{h.setPointerCapture(e.pointerId);}catch(_){}
+  _drag.raf=requestAnimationFrame(_dragAutoScroll);
+});
+document.addEventListener('pointermove',e=>{
+  if(!_drag||e.pointerId!==_drag.pointerId) return;
+  e.preventDefault();
+  _drag.lastY=e.clientY;
+  _dragMoveTo(e.clientY);
+},{passive:false});
+function _dragEnd(e){
+  if(!_drag||e.pointerId!==_drag.pointerId) return;
+  cancelAnimationFrame(_drag.raf);
+  _drag.item.classList.remove('dragging');
+  try{_drag.handle.releasePointerCapture(e.pointerId);}catch(_){}
+  const list=_drag.list; _drag=null;
+  commitNoteOrder(list);
+}
+document.addEventListener('pointerup',_dragEnd);
+document.addEventListener('pointercancel',_dragEnd);
 
 // ═══════════════ EMERGENCY RESTORE ═══════════════
 // Pulls a single course's content back from medistudy_content/<courseId> — the
@@ -883,7 +950,7 @@ function publishManualMCQ(){
   const btn=document.getElementById('mq-pub-btn');
   btn.disabled=true;btn.textContent='Publishing...';
   const id='mcq_'+Date.now();
-  db.ref('medistudy_mcq/'+id).set({id,subject,subjectId,courseId,qs:_manualQs,ts:Date.now(),count:_manualQs.length})
+  db.ref('medistudy_mcq/'+id).set({id,subject,subjectId,courseId,universityId:ADMIN_ACTIVE_UNIVERSITY_ID,qs:_manualQs,ts:Date.now(),count:_manualQs.length})
     .then(()=>{
       const s=document.getElementById('mq-pub-success');
       s.style.display='block';setTimeout(()=>s.style.display='none',2500);
@@ -1003,7 +1070,7 @@ function publishMCQSet(){
   const id='mcq_'+Date.now();
   const btn=document.getElementById('mcq-pub-btn');
   btn.disabled=true;btn.textContent='Publishing...';
-  db.ref('medistudy_mcq/'+id).set({id,subject,subjectId,courseId,qs,ts:Date.now(),count:qs.length})
+  db.ref('medistudy_mcq/'+id).set({id,subject,subjectId,courseId,universityId:ADMIN_ACTIVE_UNIVERSITY_ID,qs,ts:Date.now(),count:qs.length})
     .then(()=>{
       const s=document.getElementById('mcq-pub-success');
       s.style.display='block';setTimeout(()=>s.style.display='none',2500);
@@ -1025,6 +1092,7 @@ function loadAdminMCQSets(){
     let html='';
     snap.forEach(c=>{
       const m=c.val();
+      if((m.universityId||DEFAULT_UNIVERSITY_ID)!==ADMIN_ACTIVE_UNIVERSITY_ID) return; // other university's set
       html=`<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">
         <div>
           <div style="font-weight:700;font-size:12px;">📝 ${escapeHTML(m.subject)}</div>
