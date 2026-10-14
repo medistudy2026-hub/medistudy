@@ -452,3 +452,6 @@ nav{position:sticky;top:0;z-index:100;background:rgba(14,15,19,.92);backdrop-fil
 
 .drag-handle{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;font-size:18px;line-height:1;padding:8px 10px 8px 2px;color:var(--muted);flex-shrink:0;}
 .manage-item.dragging{opacity:.9;border-color:var(--accent);box-shadow:0 4px 14px rgba(0,0,0,.45);position:relative;z-index:5;}
+
+.folder-desc-preview{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-line;}
+.folder-desc-banner{background:rgba(255,255,255,0.05);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:9px;padding:10px 12px;font-size:12px;line-height:1.6;color:var(--muted);margin-bottom:10px;white-space:pre-line;}

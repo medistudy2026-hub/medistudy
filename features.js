@@ -1054,7 +1054,7 @@ function renderFoldersList(c, activeTab){
     let fHtml=fols.map((f,i)=>{const nc=notes.filter(n=>n.folderId===f.id).length;
       return`<div class="folder-card" onclick="goMaterialView({...smView,level:'notes',folderId:'${f.id}'})">
         <div class="folder-icon">${FOLDER_ICONS[i%FOLDER_ICONS.length]}</div>
-        <div style="flex:1"><div class="folder-name">${f.name}</div><div class="folder-count">${nc} note${nc!==1?'s':''}</div></div><div class="folder-arrow">→</div></div>`;
+        <div style="flex:1;min-width:0;"><div class="folder-name">${f.name}</div><div class="folder-count">${nc} note${nc!==1?'s':''}</div>${f.desc?`<div class="folder-desc-preview">${escapeHTML(f.desc)}</div>`:''}</div><div class="folder-arrow">→</div></div>`;
     }).join('');
     if(!fHtml)fHtml='<div class="empty-state" style="grid-column:span 2">📭 No folders yet.<br>Add via Admin → Structure → Folders!</div>';
     contentHtml=`<div class="folders-grid">${fHtml}</div>`;
@@ -1126,12 +1126,14 @@ function renderNotesList(c){
       :'<div class="empty-state">📭 No videos here yet.</div>';
   } else {
     const allNts=notes.filter(n=>n.folderId===smView.folderId);
+    const _fo=folders.find(x=>x.id===smView.folderId);
+    const folderDescHtml=(_fo&&_fo.desc)?`<div class="folder-desc-banner">ℹ️ ${escapeHTML(_fo.desc)}</div>`:'';
     const nts=showBookmarkedOnly?allNts.filter(n=>isNoteBookmarked(n.id)):allNts;
     const bmToggle=`<div class="bm-filter-row" onclick="toggleBookmarkFilter()">
       <span>🔖 Bookmarked only</span>
       <span class="bm-switch ${showBookmarkedOnly?'on':''}"><span class="bm-knob"></span></span>
     </div>`;
-    inner=bmToggle+(nts.length?`<div class="notes-list">${nts.map(n=>{
+    inner=folderDescHtml+bmToggle+(nts.length?`<div class="notes-list">${nts.map(n=>{
       const saved=isNoteSaved(n.id);
       const bookmarked=isNoteBookmarked(n.id);
       const safe=JSON.stringify(n).replace(/"/g,'&quot;');

@@ -191,15 +191,22 @@ function renderAdminFolders(){
   const subjectId=document.getElementById('struct-fsubject').value;
   const el=document.getElementById('admin-folders-list');
   const fols=folders.filter(f=>f.subjectId===subjectId);
-  el.innerHTML=fols.length?fols.map(f=>`<div class="struct-item"><span class="struct-name">📁 ${f.name}</span><div class="struct-actions"><button class="edit-btn" onclick="renameFolder('${f.id}')">✏️</button><button class="del-btn" onclick="deleteFolder('${f.id}')">Del</button></div></div>`).join(''):'<div style="font-size:12px;color:var(--muted);margin-bottom:6px">No folders yet.</div>';
+  el.innerHTML=fols.length?fols.map(f=>`<div class="struct-item"><span class="struct-name">📁 ${f.name}${f.desc?' 📝':''}</span><div class="struct-actions"><button class="edit-btn" onclick="renameFolder('${f.id}')">✏️</button><button class="edit-btn" title="Edit description" onclick="editFolderDesc('${f.id}')">📝</button><button class="del-btn" onclick="deleteFolder('${f.id}')">Del</button></div></div>`).join(''):'<div style="font-size:12px;color:var(--muted);margin-bottom:6px">No folders yet.</div>';
 }
 function addFolder(){
   const subjectId=document.getElementById('struct-fsubject').value,courseId=document.getElementById('struct-fcourse').value;
   if(!subjectId){alert('Select a subject first!');return;}
   const inp=document.getElementById('new-folder-name'),n=inp.value.trim();if(!n)return;
-  folders.push({id:uid(),subjectId,courseId,name:n});saveLocal();inp.value='';renderAdminFolders();updateNoteFolders();flashSuccess('struct-success');
+  const dInp=document.getElementById('new-folder-desc'),d=dInp?dInp.value.trim():'';
+  folders.push({id:uid(),subjectId,courseId,name:n,desc:d});saveLocal();inp.value='';if(dInp)dInp.value='';renderAdminFolders();updateNoteFolders();flashSuccess('struct-success');
 }
 function renameFolder(id){const f=folders.find(x=>x.id===id);if(!f)return;const n=prompt('Rename:',f.name);if(n&&n.trim()){f.name=n.trim();saveLocal();renderAdminFolders();updateNoteFolders();}}
+function editFolderDesc(id){
+  const f=folders.find(x=>x.id===id);if(!f)return;
+  const d=prompt('Folder description (shown to students). Leave empty to remove:',f.desc||'');
+  if(d===null)return; // cancelled
+  f.desc=d.trim();saveLocal();renderAdminFolders();
+}
 function deleteFolder(id){
   if(!confirm('Delete folder and all notes inside?'))return;
   folders=folders.filter(f=>f.id!==id);notes=notes.filter(n=>n.folderId!==id);
