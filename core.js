@@ -19,7 +19,9 @@ const PASS_HASH='226a0d3bb5dd67d71cd7158a8615bdef9c13dc01123137396dc94c038b0bbd5
 const SPONSOR_HASH='f5a0025e6984519a96aa0e64b229b8fc38464e09d09cb4ca7061ec7f310ebf89';
 // Limited "Editor" access — sees only Structure, Notes, Videos, Manage, MCQ. No Announce/Essentials/Students/Firebase. Default password: Editor@2026
 const EDITOR_HASH='b2cb491f327eab7dee2b56732e0183918e692bfab65ca5b340fc1596d2361775';
-let adminRole=null; // 'admin', 'sponsor', or 'editor'
+let adminRole=null; // 'super', 'uni' (admin of specific universities) or 'sponsor'
+let adminUniversities=null; // null = all universities (super admin); otherwise the list of university ids this person may manage
+const SUPER_UID='wkArXoe90UMd3un6Ot80BWn8id62'; // must match the super-admin uid in the Firebase rules
 const COURSE_ICONS=['📘','📗','📙','📕','📓','📔'];
 const FOLDER_ICONS=['📁','📝','⚡','💡','📌','🗒️','📊','🔖'];
 
@@ -128,49 +130,17 @@ function getStudentUniversityId(){
 }
 
 let _adminDataLoading = false; // true while ensureFullAdminDataLoaded() is mid-fetch after a university switch
-function pushToFirebase(successId,_retries){
-  _retries = _retries||0;
-  if(!fbConnected||!db){
-    if(_retries<10){ setTimeout(()=>pushToFirebase(successId,_retries+1), 500); return; }
-    alert('Still connecting to the server. Please check your internet connection and try again in a few seconds.');
-    return;
-  }
-  if(_adminDataLoading){
-    alert('Still loading this university\'s data — please wait a second and try Push again, so you don\'t push stale data over the real content.');
-    return;
-  }
-  const uid = (typeof ADMIN_ACTIVE_UNIVERSITY_ID!=='undefined' && ADMIN_ACTIVE_UNIVERSITY_ID) ? ADMIN_ACTIVE_UNIVERSITY_ID : DEFAULT_UNIVERSITY_ID;
-  const scopedUpdates = {};
-  scopedUpdates[`medistudy_courses/${uid}`] = courses;
-  courses.forEach(co=>{
-    const cid = co.id;
-    scopedUpdates[`medistudy_content/${uid}/${cid}/subjects`] = subjects.filter(s=>s.courseId===cid);
-    scopedUpdates[`medistudy_content/${uid}/${cid}/folders`]  = folders.filter(f=>f.courseId===cid);
-    scopedUpdates[`medistudy_content/${uid}/${cid}/notes`]    = notes.filter(n=>n.courseId===cid);
-    scopedUpdates[`medistudy_content/${uid}/${cid}/videos`]   = videos.filter(v=>v.courseId===cid);
-  });
-  const writes = [db.ref().update(scopedUpdates)];
-  if(uid===DEFAULT_UNIVERSITY_ID){
-    // Ulyanovsk still dual-writes the legacy flat node for any not-yet-updated devices.
-    // Other universities never had an old node, so they skip this.
-    writes.push(db.ref('medistudy').set({courses,subjects,folders,notes,videos,updatedAt:Date.now()}));
-  }
-  Promise.all(writes)
-    .then(()=>flashSuccess(successId||'fb-success','✅ Pushed! Friends can now pull.'))
-    .catch(e=>alert('Push failed: '+e.message));
-}
-function pullFromFirebase(_retries){
-  _retries = _retries||0;
-  if(!fbConnected||!db){
-    if(_retries<10){ setTimeout(()=>pullFromFirebase(_retries+1), 500); return; }
-    alert('Still connecting to the server. Please check your internet connection and try again in a few seconds.');
-    return;
-  }
-  db.ref('medistudy').once('value').then(snap=>{
-    const d=snap.val();if(!d){alert('No data on Firebase yet.');return;}
-    courses=d.courses||courses;subjects=d.subjects||subjects;folders=d.folders||folders;notes=d.notes||notes;videos=d.videos||videos;
-    saveLocal();flashSuccess('fb-success','✅ Pulled from Firebase!');renderMaterial();
-  }).catch(e=>alert('Pull failed: '+e.message));
+// Firebase stores a list either as an array (old format) or as an object keyed by item id (new per-item
+// format). This reads both, and returns a plain array sorted by each item's "order" field.
+function fbList(v){
+  if(!v) return [];
+  if(Array.isArray(v)) return v.filter(Boolean);
+  return Object.keys(v).map(k=>({k, it:v[k]})).filter(x=>x.it&&typeof x.it==='object')
+    .sort((a,b)=>{
+      const ao=typeof a.it.order==='number'?a.it.order:(/^\d+$/.test(a.k)?Number(a.k):0);
+      const bo=typeof b.it.order==='number'?b.it.order:(/^\d+$/.test(b.k)?Number(b.k):0);
+      return ao-bo;
+    }).map(x=>x.it);
 }
 function updateFBStatus(){
   const el=document.getElementById('fb-status-text');if(!el)return;
@@ -317,7 +287,7 @@ function subscribeToUniversityCourses(universityId){
   _courseListRef = db.ref(`medistudy_courses/${universityId}`);
   _courseListRef.on('value', function(snap){
     if(adminUnlocked) return; // admin/editor stay on the full unscoped dataset
-    courses = snap.val() || [];
+    courses = fbList(snap.val());
     saveLocal();
     if(document.getElementById('page-material').classList.contains('active')) renderMaterial();
   });
@@ -334,56 +304,50 @@ function subscribeToCourseContent(universityId, courseId){
     // freshly-added university) must clear out whatever the PREVIOUS course had
     // loaded, not silently keep showing it.
     const d = snap.val() || {};
-    subjects = d.subjects || [];
-    folders  = d.folders  || [];
-    notes    = d.notes    || [];
-    videos   = d.videos   || [];
+    subjects = fbList(d.subjects);
+    folders  = fbList(d.folders);
+    notes    = fbList(d.notes);
+    videos   = fbList(d.videos);
     saveLocal();
     if(document.getElementById('page-material').classList.contains('active')) renderMaterial();
     if(document.getElementById('page-videos').classList.contains('active')) renderVideosPage();
   });
 }
 
-// One-time full pull for admin/editor use — they manage ALL courses in whichever
-// university they've selected in the admin panel, not just one course. Ulyanovsk
-// still has the legacy flat node as its always-fresh source (kept so by the
-// dual-write in pushToFirebase); any other university has no such node and is
-// read straight from the scoped structure instead. cb runs once data lands (or
-// immediately if offline).
+// Full pull for admin use — they manage ALL courses in whichever university is selected in the admin panel.
+// Every university (including Ulyanovsk) is read from the scoped structure; the old flat 'medistudy' node is retired.
+let _contentNeedsMigration = false; // true while any content node is still in the old array format
+function _isLegacyArrayNode(v){
+  if(!v) return false;
+  if(Array.isArray(v)) return true;
+  return typeof v==='object' && Object.keys(v).some(k=>/^\d+$/.test(k));
+}
 function ensureFullAdminDataLoaded(cb){
   if(!fbConnected||!db){ if(cb)cb(); return; }
   const uid = (typeof ADMIN_ACTIVE_UNIVERSITY_ID!=='undefined' && ADMIN_ACTIVE_UNIVERSITY_ID) ? ADMIN_ACTIVE_UNIVERSITY_ID : DEFAULT_UNIVERSITY_ID;
   _adminDataLoading = true;
   const done = ()=>{ _adminDataLoading=false; if(cb)cb(); };
-  if(uid===DEFAULT_UNIVERSITY_ID){
-    db.ref('medistudy').once('value').then(snap=>{
-      const d = snap.val();
-      if(d){
-        courses=d.courses||courses; subjects=d.subjects||subjects; folders=d.folders||folders;
-        notes=d.notes||notes; videos=d.videos||videos;
-        saveLocal();
-      }
-      done();
-    }).catch(done);
-    return;
-  }
   Promise.all([
     db.ref(`medistudy_courses/${uid}`).once('value'),
     db.ref(`medistudy_content/${uid}`).once('value')
   ]).then(([cSnap,contentSnap])=>{
-    courses = cSnap.val() || [];
+    courses = fbList(cSnap.val());
     const content = contentSnap.val() || {};
     let allSubjects=[],allFolders=[],allNotes=[],allVideos=[];
-    Object.values(content).forEach(c=>{
-      if(c.subjects)allSubjects=allSubjects.concat(c.subjects);
-      if(c.folders)allFolders=allFolders.concat(c.folders);
-      if(c.notes)allNotes=allNotes.concat(c.notes);
-      if(c.videos)allVideos=allVideos.concat(c.videos);
+    _contentNeedsMigration = false;
+    Object.keys(content).forEach(cid=>{
+      const c = content[cid];
+      if(!c || typeof c!=='object') return;
+      ['subjects','folders','notes','videos'].forEach(k=>{ if(_isLegacyArrayNode(c[k])) _contentNeedsMigration=true; });
+      allSubjects=allSubjects.concat(fbList(c.subjects));
+      allFolders=allFolders.concat(fbList(c.folders));
+      allNotes=allNotes.concat(fbList(c.notes));
+      allVideos=allVideos.concat(fbList(c.videos));
     });
     subjects=allSubjects; folders=allFolders; notes=allNotes; videos=allVideos;
     saveLocal();
     done();
-  }).catch(done);
+  }).catch(e=>{ console.warn('Admin data load failed:', e); done(); });
 }
 
 initFirebase(function(){

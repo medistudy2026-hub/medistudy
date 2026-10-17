@@ -2022,7 +2022,6 @@ window.addEventListener('offline',()=>{
 window.addEventListener('online',()=>{
   showOfflineToast('✅ Back online!',true);
   updateHomeBanner();
-  if(fbConnected&&db) pullFromFirebase();
 });
 // Override updateHomeBanner to show offline state
 const _origUpdateHomeBanner = updateHomeBanner;

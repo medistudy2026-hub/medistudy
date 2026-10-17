@@ -588,7 +588,7 @@
       <div id="admin-university-bar" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:10px 12px;margin-bottom:12px;">
         <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:5px;">🏫 MANAGING UNIVERSITY</label>
         <select id="admin-university-sel" onchange="switchAdminUniversity()" style="width:100%;"></select>
-        <div style="font-size:11px;color:var(--muted);margin-top:6px;">Courses, Subjects, Notes, Videos, MCQ, and Push all apply to whichever university is selected here — on every tab.</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;">Courses, Subjects, Notes, Videos and MCQ all apply to whichever university is selected here — on every tab.</div>
       </div>
       <div class="admin-tabs">
         <div class="atab active" id="atab-structure" onclick="switchATab('structure',this)">🏗️ Structure</div>
@@ -605,10 +605,10 @@
       </div>
       <!-- STRUCTURE -->
       <div class="aform active" id="aform-structure">
-        <div class="section-label">🏫 Add a New University</div>
+        <div id="admin-add-university"><div class="section-label">🏫 Add a New University</div>
         <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Use the "Managing University" bar above to switch which university you're editing. Use this only to create a brand new one.</div>
         <div class="add-inline"><input type="text" id="new-uni-name" placeholder="New university name"><button onclick="addUniversity()">+ Add Uni</button></div>
-        <div class="add-inline" style="margin-top:4px;"><input type="text" id="new-uni-id" placeholder="short id e.g. ksmu"></div>
+        <div class="add-inline" style="margin-top:4px;"><input type="text" id="new-uni-id" placeholder="short id e.g. ksmu"></div></div>
         <div class="section-label" style="margin-top:18px;">📘 Courses</div>
         <div id="admin-courses-list"></div>
         <div class="add-inline"><input type="text" id="new-course-name" placeholder="e.g. 1st Course"><button onclick="addCourse()">+ Add</button></div>
@@ -623,8 +623,6 @@
         <div class="add-inline"><input type="text" id="new-folder-name" placeholder="e.g. Short Notes, Diagrams"><button onclick="addFolder()">+ Add</button></div>
         <div class="form-group" style="margin-top:6px;margin-bottom:6px;"><label>FOLDER DESCRIPTION (optional)</label><textarea id="new-folder-desc" placeholder="e.g. Special for exam — prepared according to X teacher&#39;s lectures" style="height:60px;"></textarea></div>
         <div class="success-msg" id="struct-success">✅ Saved!</div>
-        <button class="submit-btn" onclick="pushToFirebase('struct-push-success')" style="background:var(--green);color:#052e16;margin-top:14px;">⬆️ Save & Push to Firebase</button>
-        <div class="success-msg" id="struct-push-success">✅ Pushed! Everyone can now see this.</div>
       </div>
       <!-- NOTE -->
       <div class="aform" id="aform-dashboard">
@@ -646,8 +644,6 @@
         <button class="submit-btn" id="note-submit-btn" onclick="addNote()">➕ Add Note</button>
         <button class="submit-btn" id="note-cancel-edit-btn" onclick="cancelEditNote()" style="display:none;background:var(--card);color:var(--text);border:1px solid var(--border);margin-top:8px;">✕ Cancel Edit</button>
         <div class="success-msg" id="note-success">✅ Note added!</div>
-        <button class="submit-btn" onclick="pushToFirebase('note-push-success')" style="background:var(--green);color:#052e16;margin-top:14px;">⬆️ Save & Push to Firebase</button>
-        <div class="success-msg" id="note-push-success">✅ Pushed! Everyone can now see this.</div>
       </div>
       <!-- VIDEO -->
       <div class="aform" id="aform-videos">
@@ -659,15 +655,11 @@
         <button class="submit-btn" id="vid-submit-btn" onclick="addVideo()">➕ Add Video</button>
         <button class="submit-btn" id="vid-cancel-edit-btn" onclick="cancelEditVideo()" style="display:none;background:var(--card);color:var(--text);border:1px solid var(--border);margin-top:8px;">✕ Cancel Edit</button>
         <div class="success-msg" id="vid-success">✅ Video added!</div>
-        <button class="submit-btn" onclick="pushToFirebase('vid-push-success')" style="background:var(--green);color:#052e16;margin-top:14px;">⬆️ Save & Push to Firebase</button>
-        <div class="success-msg" id="vid-push-success">✅ Pushed! Everyone can now see this.</div>
       </div>
       <!-- MANAGE -->
       <div class="aform" id="aform-manage">
-        <div class="section-label">Notes</div><div style="font-size:11px;color:var(--muted);margin-bottom:6px;">☰ Hold the handle and drag a note up/down to reorder it inside its folder, then tap Save &amp; Push below.</div><div class="manage-list" id="manage-notes"></div>
+        <div class="section-label">Notes</div><div style="font-size:11px;color:var(--muted);margin-bottom:6px;">☰ Hold the handle and drag a note up/down to reorder it inside its folder — the new order saves automatically.</div><div class="manage-list" id="manage-notes"></div>
         <div class="section-label">Videos</div><div class="manage-list" id="manage-videos"></div>
-        <button class="submit-btn" onclick="pushToFirebase('manage-push-success')" style="background:var(--green);color:#052e16;margin-top:14px;">⬆️ Save & Push to Firebase</button>
-        <div class="success-msg" id="manage-push-success">✅ Pushed! Everyone can now see this.</div>
       </div>
       <!-- ANNOUNCE -->
       <div class="aform" id="aform-announce">
@@ -886,22 +878,31 @@ Answer: B — optional explanation
         <div class="form-group"><label>DATABASE URL</label><input type="url" id="fb-db-url" placeholder="https://your-app-default-rtdb.firebaseio.com"></div>
         <div class="form-group"><label>PROJECT ID</label><input type="text" id="fb-project-id" placeholder="your-project-id"></div>
         <button class="submit-btn" onclick="connectFirebase()" style="background:var(--blue);">🔥 Connect Firebase</button>
-        <button class="submit-btn" id="fb-push-btn" onclick="pushToFirebase()" style="background:var(--green);color:#052e16;">⬆️ Push My Data to Firebase</button>
-        <button class="submit-btn" id="fb-pull-btn" onclick="pullFromFirebase()" style="background:var(--purple);">⬇️ Pull Latest Data from Firebase</button>
         <div class="success-msg" id="fb-success"></div>
 
-        <div style="background:#1a1006;border:1px solid var(--accent);border-radius:10px;padding:14px;margin-top:16px;">
-          <div style="font-size:13px;font-weight:700;margin-bottom:6px;color:var(--accent);">🚚 Migrate to Scoped Sync</div>
+        <div style="background:#0e1a2e;border:1px solid var(--blue);border-radius:10px;padding:14px;margin-top:16px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px;color:var(--blue);">👤 University Admins</div>
           <div style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:10px;">
-            One-time setup step. Copies your current data into a new, university + course-scoped structure
-            (<code>medistudy_universities</code> + <code>medistudy_courses/&lt;universityId&gt;</code> +
-            <code>medistudy_content/&lt;universityId&gt;/&lt;courseId&gt;</code>) so students will eventually only
-            sync their own university's own course. Run this once per university — safe to re-run later for a new
-            university without affecting ones already migrated. This is a pure <strong>copy</strong> — your existing
-            <code>medistudy</code> node is left untouched, and nothing changes for students yet.
+            Give someone admin rights for <strong>one</strong> university. They must have signed in to MediStudy at least once.
+            They can only change that university's content, announcements and MCQs — Firebase itself enforces this.
           </div>
-          <button class="submit-btn" id="fb-migrate-btn" onclick="migrateToScopedSync()" style="background:var(--accent);color:#000;">🚚 Migrate to Scoped Sync</button>
-          <div id="fb-migrate-status" style="font-size:12px;margin-top:8px;line-height:1.6;"></div>
+          <div class="form-group"><label>THEIR EMAIL (or UID)</label><input type="text" id="role-who-inp" placeholder="friend@gmail.com"></div>
+          <div class="form-group"><label>UNIVERSITY</label><select id="role-uni-sel"></select></div>
+          <button class="submit-btn" onclick="grantUniversityAdmin()" style="background:var(--blue);color:#fff;">➕ Make University Admin</button>
+          <div id="role-status" style="font-size:12px;margin-top:6px;line-height:1.6;"></div>
+          <div class="section-label">Current university admins</div>
+          <div id="admin-roles-list" style="font-size:12px;color:var(--muted);">Loading...</div>
+        </div>
+
+        <div style="background:#1a1006;border:1px solid var(--accent);border-radius:10px;padding:14px;margin-top:16px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px;color:var(--accent);">🧩 Convert to per-item storage</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:10px;">
+            One-time step <strong>per university</strong> (acts on the university selected in "Managing University").
+            Changes how notes, videos, subjects and folders are stored so each save writes only the one item that changed.
+            Until this is run, saving content in that university is blocked on purpose. Take a database backup first.
+          </div>
+          <button class="submit-btn" onclick="migrateContentToPerItem()" style="background:var(--accent);color:#000;">🧩 Convert this university</button>
+          <div id="fb-peritem-status" style="font-size:12px;margin-top:8px;line-height:1.6;"></div>
         </div>
 
         <div style="background:#1a0606;border:1px solid var(--blue);border-radius:10px;padding:14px;margin-top:16px;">
@@ -917,19 +918,7 @@ Answer: B — optional explanation
           <div id="fb-lb-migrate-status" style="font-size:12px;margin-top:8px;line-height:1.6;"></div>
         </div>
 
-        <div style="background:#1a0606;border:1px solid #e85d38;border-radius:10px;padding:14px;margin-top:16px;">
-          <div style="font-size:13px;font-weight:700;margin-bottom:6px;color:#e85d38;">🩹 Emergency Restore (from original backup)</div>
-          <div style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:10px;">
-            If a course's content ever goes missing for the university currently selected above, this pulls it back
-            from <code>medistudy_content/&lt;courseId&gt;</code> — the untouched original copy made at your very
-            first migration, which nothing since has ever written to. This <strong>overwrites</strong> that course's
-            current content (both the new scoped copy and, for Ulyanovsk, the old <code>medistudy</code> node) with
-            that backup. Only use this on a course you've confirmed is actually broken.
-          </div>
-          <div class="form-group" style="margin-bottom:8px;"><label>COURSE ID (e.g. c1, c2, c3)</label><input type="text" id="restore-course-id" placeholder="c2"></div>
-          <button class="submit-btn" onclick="restoreCourseFromLegacyBackup()" style="background:#e85d38;color:#fff;">🩹 Restore This Course</button>
-          <div id="fb-restore-status" style="font-size:12px;margin-top:8px;line-height:1.6;"></div>
-        </div>
+        
       </div>
     </div>
   </div>

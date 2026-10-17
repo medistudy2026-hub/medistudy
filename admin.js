@@ -4,12 +4,24 @@
 // Ulyanovsk since that's the original/primary university.
 let ADMIN_ACTIVE_UNIVERSITY_ID = localStorage.getItem('ms4_admin_uni') || DEFAULT_UNIVERSITY_ID;
 
+// Which universities this person may manage: super admin = all, university admin = only their own
+function adminAllowedUniversities(){
+  if(!adminUniversities) return universities;
+  return universities.filter(u=>adminUniversities.includes(u.id));
+}
 function populateAdminUniversitySelect(){
   const sel=document.getElementById('admin-university-sel');
   if(!sel) return;
   function render(){
-    sel.innerHTML = universities.map(u=>`<option value="${u.id}">${escapeHTML(u.name)}</option>`).join('');
-    sel.value = universities.some(u=>u.id===ADMIN_ACTIVE_UNIVERSITY_ID) ? ADMIN_ACTIVE_UNIVERSITY_ID : DEFAULT_UNIVERSITY_ID;
+    const list=adminAllowedUniversities();
+    sel.innerHTML = list.map(u=>`<option value="${u.id}">${escapeHTML(u.name)}</option>`).join('');
+    if(list.some(u=>u.id===ADMIN_ACTIVE_UNIVERSITY_ID)) sel.value = ADMIN_ACTIVE_UNIVERSITY_ID;
+    else if(list.length){
+      ADMIN_ACTIVE_UNIVERSITY_ID = list[0].id;
+      localStorage.setItem('ms4_admin_uni', ADMIN_ACTIVE_UNIVERSITY_ID);
+      sel.value = ADMIN_ACTIVE_UNIVERSITY_ID;
+      ensureFullAdminDataLoaded(refreshAdminViews);
+    }
   }
   if(universities.length || !db){ render(); return; }
   sel.innerHTML = '<option value="">Loading...</option>';
@@ -22,17 +34,21 @@ function populateAdminUniversitySelect(){
 function switchAdminUniversity(){
   const sel=document.getElementById('admin-university-sel');
   if(!sel||!sel.value) return;
+  if(adminUniversities && !adminUniversities.includes(sel.value)) return; // not allowed
   ADMIN_ACTIVE_UNIVERSITY_ID = sel.value;
   localStorage.setItem('ms4_admin_uni', ADMIN_ACTIVE_UNIVERSITY_ID);
-  ensureFullAdminDataLoaded(()=>{populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();});
+  ensureFullAdminDataLoaded(refreshAdminViews);
 }
 function populateAnnouncementAudienceSelect(){
   const sel=document.getElementById('ann-audience');
   if(!sel) return;
   function render(){
     const prev=sel.value;
-    sel.innerHTML = '<option value="">🌐 All Universities</option>' + universities.map(u=>`<option value="${u.id}">🏫 ${escapeHTML(u.name)} only</option>`).join('');
-    sel.value = universities.some(u=>u.id===prev) ? prev : '';
+    const list=adminAllowedUniversities();
+    const allOpt = adminUniversities ? '' : '<option value="">🌐 All Universities</option>';
+    sel.innerHTML = allOpt + list.map(u=>`<option value="${u.id}">🏫 ${escapeHTML(u.name)} only</option>`).join('');
+    if(list.some(u=>u.id===prev)) sel.value=prev;
+    else sel.value = adminUniversities ? ADMIN_ACTIVE_UNIVERSITY_ID : '';
   }
   if(universities.length || !db){ render(); return; }
   db.ref('medistudy_universities').once('value').then(snap=>{
@@ -42,6 +58,7 @@ function populateAnnouncementAudienceSelect(){
   }).catch(render);
 }
 function addUniversity(){
+  if(adminRole!=='super'){alert('Only the super admin can add a university.');return;}
   const nameInp=document.getElementById('new-uni-name'), idInp=document.getElementById('new-uni-id');
   const name=nameInp.value.trim(), id=idInp.value.trim().toLowerCase();
   if(!name||!id){alert('Enter both a name and a short id.');return;}
@@ -65,21 +82,47 @@ function addUniversity(){
 
 function openAdmin(){
   document.getElementById('admin-modal').classList.add('open');
-  if(adminUnlocked)showPanel();
-  else{document.getElementById('admin-login').style.display='block';document.getElementById('admin-panel').style.display='none';document.getElementById('admin-pw').value='';document.getElementById('login-err').style.display='none';}
+  if(adminUnlocked){ showPanel(); return; }
+  document.getElementById('admin-login').style.display='block';
+  document.getElementById('admin-panel').style.display='none';
+  document.getElementById('admin-pw').value='';
+  document.getElementById('login-err').style.display='none';
+  // Admins no longer need a shared password: signing in with their own account is enough
+  resolveAdminAccess().then(access=>{
+    if(access && !adminUnlocked){ adminUnlocked=true; adminRole=access.role; adminUniversities=access.universities; showPanel(); }
+  });
 }
 function closeAdmin(){document.getElementById('admin-modal').classList.remove('open');}
+
+// Works out what THIS signed-in person may do, from Firebase (medistudy_admins/<uid>). The same table is what
+// the Firebase security rules check, so nobody can get more than this by editing the app in their browser.
+async function resolveAdminAccess(){
+  const user = currentUser || (auth && auth.currentUser) || null;
+  if(!user || !db) return null;
+  if(user.uid===SUPER_UID) return {role:'super', universities:null};
+  try{
+    const v=(await db.ref('medistudy_admins/'+user.uid).once('value')).val();
+    if(!v) return null;
+    const unis=Object.keys(v.universities||{}).filter(k=>v.universities[k]===true);
+    if(!unis.length) return null;
+    return {role:'uni', universities:unis};
+  }catch(e){ console.warn('Admin role lookup failed:', e); return null; }
+}
 function checkPw(){
   const input=document.getElementById('admin-pw').value;
+  const errEl=document.getElementById('login-err');
+  const showErr=m=>{errEl.textContent=m;errEl.style.display='block';};
   // Hash the input and compare
   const msgBuffer=new TextEncoder().encode(input);
-  crypto.subtle.digest('SHA-256',msgBuffer).then(hashBuffer=>{
+  crypto.subtle.digest('SHA-256',msgBuffer).then(async hashBuffer=>{
     const hashArray=Array.from(new Uint8Array(hashBuffer));
     const hashHex=hashArray.map(b=>b.toString(16).padStart(2,'0')).join('');
-    if(hashHex===PASS_HASH){adminUnlocked=true;adminRole='admin';showPanel();}
-    else if(hashHex===SPONSOR_HASH){adminUnlocked=true;adminRole='sponsor';showPanel();}
-    else if(hashHex===EDITOR_HASH){adminUnlocked=true;adminRole='editor';showPanel();}
-    else document.getElementById('login-err').style.display='block';
+    if(hashHex===SPONSOR_HASH){ adminUnlocked=true;adminRole='sponsor';adminUniversities=null;showPanel();return; }
+    // Admins and editors: no password — their own signed-in account decides what they may do
+    const access=await resolveAdminAccess();
+    if(access){ adminUnlocked=true; adminRole=access.role; adminUniversities=access.universities; showPanel(); return; }
+    if(!(currentUser||(auth&&auth.currentUser))) showErr('❌ Sign in to MediStudy with your own account first (profile icon), then open this panel again.');
+    else showErr('❌ This account has no admin rights. Ask the super admin to add you.');
   });
 }
 function showPanel(){
@@ -95,30 +138,34 @@ function showPanel(){
     switchATab('announce', document.getElementById('atab-announce'));
     return;
   }
-  if(adminRole==='editor'){
-    // Limited view: Structure, Notes, Videos, Manage, MCQ, Announce, Feedback, Dashboard — no Essentials/Students/Firebase
-    document.getElementById('admin-university-bar').style.display='';
-    document.querySelectorAll('.atab').forEach(t=>t.style.display='none');
-    ['atab-structure','atab-notes','atab-videos','atab-manage','atab-mcq','atab-announce','atab-feedback','atab-dashboard'].forEach(id=>{document.getElementById(id).style.display='';});
-    populateAdminUniversitySelect();
-    populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();
-    ensureFullAdminDataLoaded(()=>{populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();});
-    switchATab('structure', document.getElementById('atab-structure'));
-    return;
+  const isSuper = adminRole==='super';
+  if(!isSuper && adminUniversities && !adminUniversities.includes(ADMIN_ACTIVE_UNIVERSITY_ID)){
+    ADMIN_ACTIVE_UNIVERSITY_ID = adminUniversities[0];
+    localStorage.setItem('ms4_admin_uni', ADMIN_ACTIVE_UNIVERSITY_ID);
   }
   document.getElementById('admin-university-bar').style.display='';
-  document.querySelectorAll('.atab').forEach(t=>t.style.display='');
+  const addUni=document.getElementById('admin-add-university');
+  if(addUni) addUni.style.display = isSuper ? '' : 'none';
+  document.querySelectorAll('.atab').forEach(t=>t.style.display='none');
+  const tabs = isSuper
+    ? ['structure','dashboard','notes','videos','manage','announce','essentials','mcq','students','feedback','firebase']
+    : ['structure','notes','videos','manage','mcq','announce','feedback']; // university admin: no Essentials/Students/Firebase; Dashboard returns in step 3 (it reads the users node)
+  tabs.forEach(t=>{ const el=document.getElementById('atab-'+t); if(el) el.style.display=''; });
   populateAdminUniversitySelect();
-  populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();updateFBStatus();
-  ensureFullAdminDataLoaded(()=>{populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();});
-  if(fbConfig){
-    document.getElementById('fb-api-key').value=fbConfig.apiKey||'';
-    document.getElementById('fb-db-url').value=fbConfig.databaseURL||'';
-    document.getElementById('fb-project-id').value=fbConfig.projectId||'';
+  populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();
+  ensureFullAdminDataLoaded(refreshAdminViews);
+  if(isSuper){
+    updateFBStatus();
+    if(fbConfig){
+      document.getElementById('fb-api-key').value=fbConfig.apiKey||'';
+      document.getElementById('fb-db-url').value=fbConfig.databaseURL||'';
+      document.getElementById('fb-project-id').value=fbConfig.projectId||'';
+    }
+    const savedGK=localStorage.getItem('ms4_groq_key');
+    if(savedGK){document.getElementById('gemini-key-input').value=savedGK;document.getElementById('gemini-key-status').innerHTML='<span style="color:var(--green)">✅ Groq key active — AI Tutor working!</span>';}
+    else{document.getElementById('gemini-key-input').value='';document.getElementById('gemini-key-status').innerHTML='<span style="color:var(--green)">✅ Secure Worker active — AI Tutor working!</span>';}
   }
-  const savedGK=localStorage.getItem('ms4_groq_key');
-  if(savedGK){document.getElementById('gemini-key-input').value=savedGK;document.getElementById('gemini-key-status').innerHTML='<span style="color:var(--green)">✅ Groq key active — AI Tutor working!</span>';}
-  else{document.getElementById('gemini-key-input').value='';document.getElementById('gemini-key-status').innerHTML='<span style="color:var(--green)">✅ Secure Worker active — AI Tutor working!</span>';}
+  switchATab('structure', document.getElementById('atab-structure'));
 }
 function switchATab(tab,el){
   document.querySelectorAll('.atab').forEach(t=>t.classList.remove('active'));
@@ -128,7 +175,7 @@ function switchATab(tab,el){
   if(tab==='dashboard')loadDashboard();
   if(tab==='notes'){updateNoteSubjects();updateNoteFolders();}
   if(tab==='videos')updateVidSubjects();
-  if(tab==='firebase')updateFBStatus();
+  if(tab==='firebase'){updateFBStatus();if(adminRole==='super')loadAdminRoles();}
   if(tab==='announce'){loadAdminAnnouncements();populateAnnouncementAudienceSelect();}
   if(tab==='essentials')loadAdminEssentials();
   if(tab==='mcq'){loadAdminMCQSets();populateMCQSubjectDropdowns();}
@@ -148,12 +195,74 @@ function renderAdminCourses(){
   const el=document.getElementById('admin-courses-list');
   el.innerHTML=courses.length?courses.map((co,i)=>`<div class="struct-item"><span class="struct-name">${courseIcon(i)} ${co.name}</span><div class="struct-actions"><button class="edit-btn" onclick="renameCourse('${co.id}')">✏️</button><button class="del-btn" onclick="deleteCourse('${co.id}')">Del</button></div></div>`).join(''):'<div style="font-size:12px;color:var(--muted)">No courses yet.</div>';
 }
-function addCourse(){const inp=document.getElementById('new-course-name'),n=inp.value.trim();if(!n)return;courses.push({id:uid(),name:n});saveLocal();inp.value='';renderAdminCourses();populateAllSelects();flashSuccess('struct-success');}
-function renameCourse(id){const co=courses.find(c=>c.id===id);if(!co)return;const n=prompt('Rename:',co.name);if(n&&n.trim()){co.name=n.trim();saveLocal();renderAdminCourses();populateAllSelects();}}
+// ── Saving: every change writes ONLY the one item it touched, never a whole list ──
+function adminBase(){ return 'medistudy_content/'+ADMIN_ACTIVE_UNIVERSITY_ID; }
+function cleanItem(o){ return JSON.parse(JSON.stringify(o)); } // drops undefined (Firebase rejects it)
+function itemPath(kind,item){ return adminBase()+'/'+item.courseId+'/'+kind+'/'+item.id; }
+function refreshAdminViews(){ populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();renderManage(); }
+// updates = {firebasePath: value|null}. Resolves true if saved. On any failure it says so and reloads the real data,
+// so the screen never silently shows something that was not actually saved.
+// ── Save feedback: the admin always sees ⏳ Saving… → ✅ Saved or ❌ NOT saved (tap to dismiss) ──
+let _toastEl=null,_toastTimer=null,_lastSaveErr='';
+function adminToast(msg,kind,ms){
+  if(!_toastEl){
+    _toastEl=document.createElement('div');
+    _toastEl.style.cssText='position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:5000;max-width:92vw;padding:10px 16px;border-radius:10px;font-size:13px;font-weight:700;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.45);display:none;cursor:pointer;';
+    _toastEl.onclick=()=>{_toastEl.style.display='none';};
+    document.body.appendChild(_toastEl);
+  }
+  const c={ok:['#0d2018','#38c49a'],err:['#2a0e0e','#e85d38'],wait:['#2d1a00','#e8a838']}[kind||'ok'];
+  _toastEl.style.background=c[0]; _toastEl.style.color=c[1]; _toastEl.style.border='1px solid '+c[1];
+  _toastEl.textContent=msg; _toastEl.style.display='block';
+  clearTimeout(_toastTimer);
+  if(ms) _toastTimer=setTimeout(()=>{_toastEl.style.display='none';},ms);
+}
+// Wraps a Firebase write. Resolves true only when Firebase has confirmed it. If there is no answer after 8s
+// (usually no internet) it says so instead of staying silent, and turns into ✅ if the write lands later.
+function adminTrack(promise, okMsg){
+  adminToast('⏳ Saving…','wait');
+  const slow=setTimeout(()=>adminToast('⏳ Still saving — no confirmation yet. Check your internet and keep the app open.','wait'),8000);
+  return promise
+    .then(()=>{ clearTimeout(slow); adminToast('✅ '+(okMsg||'Saved'),'ok',2500); return true; })
+    .catch(e=>{ clearTimeout(slow); _lastSaveErr=e.message; adminToast('❌ NOT saved: '+e.message,'err',9000); return false; });
+}
+function adminTrackStrict(promise, okMsg){ // same toasts, but keeps rejecting so the caller's own .catch still runs
+  return adminTrack(promise, okMsg).then(ok=>{ if(!ok) throw new Error(_lastSaveErr||'not saved'); });
+}
+function adminSave(updates, isContent){
+  let problem=null;
+  if(!fbConnected||!db) problem='Not connected to Firebase yet.';
+  else if(!(currentUser||(auth&&auth.currentUser))) problem='You are not signed in.';
+  else if(_adminDataLoading) problem='Still loading this university\'s data — try again in a second.';
+  else if(isContent && _contentNeedsMigration) problem='This university\'s content is still in the old format. Super admin: Firebase tab → "Convert to per-item storage" first.';
+  if(problem){ adminToast('❌ NOT saved: '+problem,'err',9000); alert('❌ Nothing was saved. '+problem); ensureFullAdminDataLoaded(refreshAdminViews); return Promise.resolve(false); }
+  return adminTrack(db.ref().update(updates)).then(ok=>{
+    if(!ok){
+      alert('❌ NOT saved. The screen has been reloaded with what is really in Firebase — check it and try again. (If it keeps failing, your account may not have rights for this university.)');
+      ensureFullAdminDataLoaded(refreshAdminViews);
+    }
+    return ok;
+  });
+}
+function saveCoursesList(){ return adminSave({['medistudy_courses/'+ADMIN_ACTIVE_UNIVERSITY_ID]: cleanItem(courses)}, false); }
+function addCourse(){
+  const inp=document.getElementById('new-course-name'),n=inp.value.trim();if(!n)return;
+  courses.push({id:uid(),name:n});saveLocal();inp.value='';renderAdminCourses();populateAllSelects();
+  saveCoursesList().then(ok=>{if(ok)flashSuccess('struct-success');});
+}
+function renameCourse(id){
+  const co=courses.find(c=>c.id===id);if(!co)return;
+  const n=prompt('Rename:',co.name);
+  if(n&&n.trim()){co.name=n.trim();saveLocal();renderAdminCourses();populateAllSelects();saveCoursesList();}
+}
 function deleteCourse(id){
   if(!confirm('Delete course and ALL its data?'))return;
   courses=courses.filter(c=>c.id!==id);subjects=subjects.filter(s=>s.courseId!==id);folders=folders.filter(f=>f.courseId!==id);notes=notes.filter(n=>n.courseId!==id);videos=videos.filter(v=>v.courseId!==id);
   saveLocal();renderAdminCourses();populateAllSelects();
+  const updates={};
+  updates[adminBase()+'/'+id]=null;
+  updates['medistudy_courses/'+ADMIN_ACTIVE_UNIVERSITY_ID]=cleanItem(courses);
+  adminSave(updates,false);
 }
 
 // Subjects
@@ -165,13 +274,27 @@ function renderAdminSubjects(){
 }
 function addSubject(){
   const courseId=document.getElementById('struct-course-sel').value,inp=document.getElementById('new-subject-name'),n=inp.value.trim();if(!n)return;
-  subjects.push({id:uid(),courseId,name:n});saveLocal();inp.value='';renderAdminSubjects();populateAllSelects();updateFolderCourseSubject();flashSuccess('struct-success');
+  if(!courseId){alert('Select a course first!');return;}
+  const s={id:uid(),courseId,name:n,order:Date.now()};
+  subjects.push(s);saveLocal();inp.value='';renderAdminSubjects();populateAllSelects();updateFolderCourseSubject();
+  adminSave({[itemPath('subjects',s)]:cleanItem(s)},true).then(ok=>{if(ok)flashSuccess('struct-success');});
 }
-function renameSubject(id){const s=subjects.find(x=>x.id===id);if(!s)return;const n=prompt('Rename:',s.name);if(n&&n.trim()){s.name=n.trim();saveLocal();renderAdminSubjects();populateAllSelects();updateFolderCourseSubject();}}
+function renameSubject(id){
+  const s=subjects.find(x=>x.id===id);if(!s)return;
+  const n=prompt('Rename:',s.name);
+  if(n&&n.trim()){s.name=n.trim();saveLocal();renderAdminSubjects();populateAllSelects();updateFolderCourseSubject();adminSave({[itemPath('subjects',s)]:cleanItem(s)},true);}
+}
 function deleteSubject(id){
   if(!confirm('Delete subject and all its folders, notes, videos?'))return;
+  const updates={};
+  const s=subjects.find(x=>x.id===id);
+  if(s) updates[itemPath('subjects',s)]=null;
+  folders.filter(f=>f.subjectId===id).forEach(f=>{updates[itemPath('folders',f)]=null;});
+  notes.filter(n=>n.subjectId===id).forEach(n=>{updates[itemPath('notes',n)]=null;});
+  videos.filter(v=>v.subjectId===id).forEach(v=>{updates[itemPath('videos',v)]=null;});
   subjects=subjects.filter(s=>s.id!==id);folders=folders.filter(f=>f.subjectId!==id);notes=notes.filter(n=>n.subjectId!==id);videos=videos.filter(v=>v.subjectId!==id);
   saveLocal();renderAdminSubjects();populateAllSelects();updateFolderCourseSubject();
+  adminSave(updates,true);
 }
 
 // Folders
@@ -198,19 +321,31 @@ function addFolder(){
   if(!subjectId){alert('Select a subject first!');return;}
   const inp=document.getElementById('new-folder-name'),n=inp.value.trim();if(!n)return;
   const dInp=document.getElementById('new-folder-desc'),d=dInp?dInp.value.trim():'';
-  folders.push({id:uid(),subjectId,courseId,name:n,desc:d});saveLocal();inp.value='';if(dInp)dInp.value='';renderAdminFolders();updateNoteFolders();flashSuccess('struct-success');
+  const f={id:uid(),subjectId,courseId,name:n,desc:d,order:Date.now()};
+  folders.push(f);saveLocal();inp.value='';if(dInp)dInp.value='';renderAdminFolders();updateNoteFolders();
+  adminSave({[itemPath('folders',f)]:cleanItem(f)},true).then(ok=>{if(ok)flashSuccess('struct-success');});
 }
-function renameFolder(id){const f=folders.find(x=>x.id===id);if(!f)return;const n=prompt('Rename:',f.name);if(n&&n.trim()){f.name=n.trim();saveLocal();renderAdminFolders();updateNoteFolders();}}
+function renameFolder(id){
+  const f=folders.find(x=>x.id===id);if(!f)return;
+  const n=prompt('Rename:',f.name);
+  if(n&&n.trim()){f.name=n.trim();saveLocal();renderAdminFolders();updateNoteFolders();adminSave({[itemPath('folders',f)]:cleanItem(f)},true);}
+}
 function editFolderDesc(id){
   const f=folders.find(x=>x.id===id);if(!f)return;
   const d=prompt('Folder description (shown to students). Leave empty to remove:',f.desc||'');
   if(d===null)return; // cancelled
   f.desc=d.trim();saveLocal();renderAdminFolders();
+  adminSave({[itemPath('folders',f)]:cleanItem(f)},true);
 }
 function deleteFolder(id){
   if(!confirm('Delete folder and all notes inside?'))return;
+  const updates={};
+  const f=folders.find(x=>x.id===id);
+  if(f) updates[itemPath('folders',f)]=null;
+  notes.filter(n=>n.folderId===id).forEach(n=>{updates[itemPath('notes',n)]=null;});
   folders=folders.filter(f=>f.id!==id);notes=notes.filter(n=>n.folderId!==id);
   saveLocal();renderAdminFolders();updateNoteFolders();
+  adminSave(updates,true);
 }
 
 // Note form
@@ -243,19 +378,23 @@ function addNote(){
   if(!fId){alert('Create a folder first in Structure → Folders!');return;}
 
   if(editingNoteId){
-    // UPDATE existing note in place — keeps same id, so likes/bookmarks aren't lost
+    // UPDATE existing note in place — keeps same id, so likes/bookmarks aren't lost. Saves just this one note.
     const n=notes.find(x=>x.id===editingNoteId);
-    if(n){ n.courseId=cId; n.subjectId=sId; n.folderId=fId; n.topic=topic; n.desc=desc; n.link=link; }
+    if(!n){ cancelEditNote(); return; }
+    const updates={};
+    if(n.courseId!==cId) updates[itemPath('notes',n)]=null; // moved to another course: remove the old copy
+    n.courseId=cId; n.subjectId=sId; n.folderId=fId; n.topic=topic; n.desc=desc; n.link=link;
+    updates[itemPath('notes',n)]=cleanItem(n);
     saveLocal();
-    cancelEditNote();
-    flashSuccess('note-success');
-    renderManage();
+    adminSave(updates,true).then(ok=>{ if(ok){ cancelEditNote(); flashSuccess('note-success'); renderManage(); } });
     return;
   }
 
-  notes.push({id:uid(),courseId:cId,subjectId:sId,folderId:fId,topic,desc,link});saveLocal();
-  ['note-topic','note-desc','note-link'].forEach(id=>document.getElementById(id).value='');
-  flashSuccess('note-success');
+  const n={id:uid(),courseId:cId,subjectId:sId,folderId:fId,topic,desc,link,order:Date.now()};
+  notes.push(n);saveLocal();
+  adminSave({[itemPath('notes',n)]:cleanItem(n)},true).then(ok=>{
+    if(ok){ ['note-topic','note-desc','note-link'].forEach(id=>document.getElementById(id).value=''); flashSuccess('note-success'); }
+  });
 }
 function editNote(id){
   const n=notes.find(x=>x.id===id);
@@ -288,17 +427,21 @@ function addVideo(){
 
   if(editingVideoId){
     const v=videos.find(x=>x.id===editingVideoId);
-    if(v){ v.courseId=cId; v.subjectId=sId; v.title=title; v.desc=desc; v.link=link; }
+    if(!v){ cancelEditVideo(); return; }
+    const updates={};
+    if(v.courseId!==cId) updates[itemPath('videos',v)]=null;
+    v.courseId=cId; v.subjectId=sId; v.title=title; v.desc=desc; v.link=link;
+    updates[itemPath('videos',v)]=cleanItem(v);
     saveLocal();
-    cancelEditVideo();
-    flashSuccess('vid-success');
-    renderManage();
+    adminSave(updates,true).then(ok=>{ if(ok){ cancelEditVideo(); flashSuccess('vid-success'); renderManage(); } });
     return;
   }
 
-  videos.push({id:uid(),courseId:cId,subjectId:sId,title,desc,link});saveLocal();
-  ['vid-title','vid-desc','vid-link'].forEach(id=>document.getElementById(id).value='');
-  flashSuccess('vid-success');
+  const v={id:uid(),courseId:cId,subjectId:sId,title,desc,link,order:Date.now()};
+  videos.push(v);saveLocal();
+  adminSave({[itemPath('videos',v)]:cleanItem(v)},true).then(ok=>{
+    if(ok){ ['vid-title','vid-desc','vid-link'].forEach(id=>document.getElementById(id).value=''); flashSuccess('vid-success'); }
+  });
 }
 function editVideo(id){
   const v=videos.find(x=>x.id===id);
@@ -320,7 +463,6 @@ function cancelEditVideo(){
   document.getElementById('vid-submit-btn').textContent='➕ Add Video';
   document.getElementById('vid-cancel-edit-btn').style.display='none';
 }
-
 // Manage
 function renderManage(){
   document.getElementById('manage-notes').innerHTML=notes.length?renderNotesTree():'<div style="font-size:12px;color:var(--muted)">No notes yet.</div>';
@@ -392,8 +534,8 @@ function renderVideosTree(){
   });
   return html;
 }
-function delNote(id){if(!confirm('Delete?'))return;notes=notes.filter(n=>n.id!==id);saveLocal();renderManage();}
-function delVideo(id){if(!confirm('Delete?'))return;videos=videos.filter(v=>v.id!==id);saveLocal();renderManage();}
+function delNote(id){if(!confirm('Delete?'))return;const n=notes.find(x=>x.id===id);notes=notes.filter(x=>x.id!==id);saveLocal();renderManage();if(n)adminSave({[itemPath('notes',n)]:null},true);}
+function delVideo(id){if(!confirm('Delete?'))return;const v=videos.find(x=>x.id===id);videos=videos.filter(x=>x.id!==id);saveLocal();renderManage();if(v)adminSave({[itemPath('videos',v)]:null},true);}
 
 // ═══════════════ SECRET ADMIN ACCESS ═══════════════
 let tapCount = 0;
@@ -441,94 +583,43 @@ function saveGeminiKey(){
   if(saved) window.RUNTIME_GROQ_KEY = saved;
 })();
 
-// ═══════════════ COURSE-SCOPED SYNC MIGRATION (one-time, pure copy) ═══════════════
-// Copies the current monolithic 'medistudy' node into a university+course-scoped
-// structure: medistudy_universities, medistudy_courses/<universityId>, and
-// medistudy_content/<universityId>/<courseId>/{subjects,folders,notes,videos}.
-// All of today's data belongs to Ulyanovsk State University (id 'usu') — when a
-// second university is added later, it slots in alongside this one, no rebuild needed.
-// Does NOT touch the old 'medistudy' node, and does NOT change what students sync
-// yet — that's a separate later step once this new structure is confirmed correct.
-const MIGRATION_UNIVERSITY = {id:'usu', name:'Ulyanovsk State University'};
-
-async function migrateToScopedSync(){
-  const statusEl = document.getElementById('fb-migrate-status');
-  const btn = document.getElementById('fb-migrate-btn');
-  if(!fbConnected || !db){
-    statusEl.innerHTML = '<span style="color:#e85d38">❌ Not connected to Firebase. Connect first.</span>';
-    return;
-  }
-  if(!confirm(`This reads your current data and copies it into the new university+course-scoped structure, under "${MIGRATION_UNIVERSITY.name}". Your existing "medistudy" node stays untouched, and nothing changes for students yet. Continue?`)) return;
-
-  btn.disabled = true;
-  statusEl.innerHTML = '⏳ Reading current data...';
-
+// ═══════════════ ONE-TIME: CONVERT A UNIVERSITY'S CONTENT TO PER-ITEM STORAGE ═══════════════
+// Old format: medistudy_content/<uni>/<course>/notes = one array. New format: .../notes/<noteId> = {...,order}.
+// Once converted, every save touches only the one item that changed, so two admins can never overwrite each other.
+// Acts on the university selected in "Managing University". Safe to re-run. Super admin only.
+async function migrateContentToPerItem(){
+  const statusEl=document.getElementById('fb-peritem-status');
+  if(adminRole!=='super'){ statusEl.innerHTML='<span style="color:#e85d38">❌ Super admin only.</span>'; return; }
+  if(!fbConnected||!db){ statusEl.innerHTML='<span style="color:#e85d38">❌ Not connected to Firebase.</span>'; return; }
+  const uni=ADMIN_ACTIVE_UNIVERSITY_ID;
+  if(!confirm('Convert "'+uni+'" content to per-item storage? Make sure you have a fresh database backup. Students on very old app versions may need to reopen the app.')) return;
+  statusEl.innerHTML='⏳ Reading...';
   try{
-    const snap = await db.ref('medistudy').once('value');
-    const d = snap.val();
-    if(!d){
-      statusEl.innerHTML = '<span style="color:#e85d38">❌ No data found at the medistudy node.</span>';
-      btn.disabled = false;
-      return;
-    }
-    const srcCourses  = d.courses  || [];
-    const srcSubjects = d.subjects || [];
-    const srcFolders  = d.folders  || [];
-    const srcNotes    = d.notes    || [];
-    const srcVideos   = d.videos   || [];
-
-    if(srcCourses.length === 0){
-      statusEl.innerHTML = '<span style="color:#e85d38">❌ No courses found — nothing to migrate.</span>';
-      btn.disabled = false;
-      return;
-    }
-
-    statusEl.innerHTML = '⏳ Writing university + course-scoped content...';
-    const uid = MIGRATION_UNIVERSITY.id;
-    const updates = {};
-
-    // University list: merge with whatever's already there (so re-running this later
-    // for a second university doesn't wipe out the first one's entry)
-    const existingUnis = (await db.ref('medistudy_universities').once('value')).val() || [];
-    const uniList = existingUnis.some(u=>u.id===uid) ? existingUnis : [...existingUnis, MIGRATION_UNIVERSITY];
-    updates['medistudy_universities'] = uniList;
-
-    updates[`medistudy_courses/${uid}`] = srcCourses;
-    let subjectCount=0, folderCount=0, noteCount=0, videoCount=0;
-
-    srcCourses.forEach(course=>{
-      const cid = course.id;
-      const cSubjects = srcSubjects.filter(s=>s.courseId===cid);
-      const cFolders  = srcFolders.filter(f=>f.courseId===cid);
-      const cNotes    = srcNotes.filter(n=>n.courseId===cid);
-      const cVideos   = srcVideos.filter(v=>v.courseId===cid);
-      updates[`medistudy_content/${uid}/${cid}/subjects`] = cSubjects;
-      updates[`medistudy_content/${uid}/${cid}/folders`]  = cFolders;
-      updates[`medistudy_content/${uid}/${cid}/notes`]    = cNotes;
-      updates[`medistudy_content/${uid}/${cid}/videos`]   = cVideos;
-      subjectCount += cSubjects.length;
-      folderCount  += cFolders.length;
-      noteCount    += cNotes.length;
-      videoCount   += cVideos.length;
+    const snap=await db.ref('medistudy_content/'+uni).once('value');
+    const content=snap.val()||{};
+    const updates={}; let nodes=0, items=0, problems=[];
+    Object.keys(content).forEach(cid=>{
+      const c=content[cid]; if(!c||typeof c!=='object') return;
+      ['subjects','folders','notes','videos'].forEach(kind=>{
+        const raw=c[kind]; if(!raw) return;
+        const obj={};
+        fbList(raw).forEach((it,i)=>{
+          if(!it||!it.id){ problems.push(cid+'/'+kind+' has an item with no id'); return; }
+          if(obj[it.id]){ problems.push(cid+'/'+kind+' has a duplicate id '+it.id); return; }
+          obj[it.id]=Object.assign({},it,{order:i+1}); items++;
+        });
+        updates['medistudy_content/'+uni+'/'+cid+'/'+kind]=obj; nodes++;
+      });
     });
-
-    // Data-hygiene check: anything whose courseId doesn't match a real course won't have landed anywhere above
-    const knownIds = new Set(srcCourses.map(c=>c.id));
-    const unassigned = [...srcSubjects, ...srcFolders, ...srcNotes, ...srcVideos]
-      .filter(x => !knownIds.has(x.courseId)).length;
-
+    if(problems.length){ statusEl.innerHTML='<span style="color:#e85d38">❌ Stopped, nothing changed: '+escapeHTML(problems.slice(0,5).join('; '))+'</span>'; return; }
+    if(!nodes){ statusEl.innerHTML='✅ Nothing to convert for '+escapeHTML(uni)+'.'; return; }
+    statusEl.innerHTML='⏳ Writing '+items+' items...';
     await db.ref().update(updates);
-
-    let msg = `✅ Migration complete for <strong>${MIGRATION_UNIVERSITY.name}</strong>!<br>${srcCourses.length} course${srcCourses.length!==1?'s':''}, ${subjectCount} subjects, ${folderCount} folders, ${noteCount} notes, ${videoCount} videos copied into medistudy_content/${uid}.`;
-    if(unassigned>0){
-      msg += `<br><span style="color:var(--accent)">⚠️ ${unassigned} item(s) had a courseId that didn't match any course and were skipped — worth checking in Firebase Console.</span>`;
-    }
-    msg += `<br><br>Your original <strong>medistudy</strong> node is untouched — the app is still using it, nothing has changed for students. Go check <strong>medistudy_universities</strong>, <strong>medistudy_courses</strong>, and <strong>medistudy_content</strong> in Firebase Console to confirm the numbers above look right.`;
-    statusEl.innerHTML = msg;
+    statusEl.innerHTML='✅ Converted '+items+' items in '+nodes+' lists for <strong>'+escapeHTML(uni)+'</strong>. Check a few notes in the app.';
+    ensureFullAdminDataLoaded(refreshAdminViews);
   }catch(e){
-    statusEl.innerHTML = '<span style="color:#e85d38">❌ Migration failed: '+e.message+'</span>';
+    statusEl.innerHTML='<span style="color:#e85d38">❌ Failed: '+escapeHTML(e.message)+'</span>';
   }
-  btn.disabled = false;
 }
 
 // ═══════════════ QUIZ LEADERBOARD MIGRATION (one-time, pure copy) ═══════════════
@@ -607,8 +698,12 @@ function commitNoteOrder(list){
   const idSet=new Set(ids), slots=[], byId={};
   notes.forEach((n,i)=>{ if(idSet.has(n.id)){ slots.push(i); byId[n.id]=n; } });
   if(slots.length!==ids.length) return; // safety: something doesn't line up, don't touch data
-  ids.forEach((id,k)=>{ notes[slots[k]]=byId[id]; });
+  ids.forEach((id,k)=>{ notes[slots[k]]=byId[id]; byId[id].order=k+1; });
   saveLocal();
+  // Save only this folder's new order — one small "order" field per note, nothing else is touched
+  const updates={};
+  ids.forEach(id=>{ updates[itemPath('notes',byId[id])+'/order']=byId[id].order; });
+  adminSave(updates,true);
 }
 document.addEventListener('pointerdown',e=>{
   const h=e.target.closest&&e.target.closest('.drag-handle'); if(!h||_drag) return;
@@ -637,53 +732,6 @@ function _dragEnd(e){
 document.addEventListener('pointerup',_dragEnd);
 document.addEventListener('pointercancel',_dragEnd);
 
-// ═══════════════ EMERGENCY RESTORE ═══════════════
-// Pulls a single course's content back from medistudy_content/<courseId> — the
-// original, never-touched-since flat backup made at the very first migration —
-// into the live scoped structure. Also patches the old flat 'medistudy' node
-// (for Ulyanovsk) so the admin's next data load doesn't re-pull stale content
-// and undo the restore.
-async function restoreCourseFromLegacyBackup(){
-  const statusEl = document.getElementById('fb-restore-status');
-  const courseId = document.getElementById('restore-course-id').value.trim();
-  if(!courseId){ statusEl.innerHTML='<span style="color:#e85d38">❌ Enter a course id first.</span>'; return; }
-  if(!fbConnected||!db){ statusEl.innerHTML='<span style="color:#e85d38">❌ Not connected to Firebase.</span>'; return; }
-  if(!confirm(`This overwrites "${courseId}"'s current content for the selected university with whatever is saved in the old medistudy_content/${courseId} backup. Continue?`)) return;
-
-  statusEl.innerHTML = '⏳ Reading backup...';
-  try{
-    const snap = await db.ref('medistudy_content/'+courseId).once('value');
-    const d = snap.val();
-    if(!d){ statusEl.innerHTML = '<span style="color:#e85d38">❌ No backup found at medistudy_content/'+courseId+'.</span>'; return; }
-
-    const uid = ADMIN_ACTIVE_UNIVERSITY_ID;
-    statusEl.innerHTML = '⏳ Restoring into medistudy_content/'+uid+'/'+courseId+'...';
-    const updates = {};
-    updates[`medistudy_content/${uid}/${courseId}`] = d;
-    await db.ref().update(updates);
-
-    if(uid===DEFAULT_UNIVERSITY_ID){
-      statusEl.innerHTML = '⏳ Patching the old medistudy node too, for consistency...';
-      const oldSnap = await db.ref('medistudy').once('value');
-      const old = oldSnap.val() || {courses:[],subjects:[],folders:[],notes:[],videos:[]};
-      const keep = arr => (arr||[]).filter(x=>x.courseId!==courseId);
-      const merged = {
-        courses: old.courses||[],
-        subjects: [...keep(old.subjects), ...(d.subjects||[])],
-        folders:  [...keep(old.folders),  ...(d.folders||[])],
-        notes:    [...keep(old.notes),    ...(d.notes||[])],
-        videos:   [...keep(old.videos),   ...(d.videos||[])],
-        updatedAt: Date.now()
-      };
-      await db.ref('medistudy').set(merged);
-    }
-
-    statusEl.innerHTML = `✅ Restored <strong>${courseId}</strong> — ${(d.subjects||[]).length} subjects, ${(d.folders||[]).length} folders, ${(d.notes||[]).length} notes, ${(d.videos||[]).length} videos. Close and reopen the admin panel to see it reflected.`;
-  }catch(e){
-    statusEl.innerHTML = '<span style="color:#e85d38">❌ Restore failed: '+e.message+'</span>';
-  }
-}
-
 document.getElementById('admin-modal').addEventListener('click',function(e){if(e.target===this)closeAdmin();});
 
 function postAnnouncement(){
@@ -691,12 +739,13 @@ function postAnnouncement(){
   const title=document.getElementById('ann-title').value.trim();
   const msg=document.getElementById('ann-msg').value.trim();
   const type=document.getElementById('ann-type').value;
-  const universityId=document.getElementById('ann-audience').value; // '' = all universities
+  const universityId=document.getElementById('ann-audience').value; // '' = all universities (super admin only)
+  if(adminUniversities && !universityId){alert('Choose your university.');return;}
   const days=parseInt(document.getElementById('ann-expiry').value)||3;
   if(!title||!msg){alert('Fill in title and message.');return;}
   const expiry=Date.now()+(days*24*60*60*1000);
   const id='ann_'+Date.now();
-  db.ref('medistudy_announcements/'+id).set({id,title,msg,type,universityId,expiry,ts:Date.now()})
+  adminTrackStrict(db.ref('medistudy_announcements/'+id).set({id,title,msg,type,universityId,expiry,ts:Date.now()}),'Published')
     .then(()=>{
       document.getElementById('ann-title').value='';
       document.getElementById('ann-msg').value='';
@@ -717,6 +766,7 @@ function loadAdminAnnouncements(){
     let html='';
     snap.forEach(c=>{
       const a=c.val();
+      if(adminUniversities && !adminUniversities.includes(a.universityId)) return; // another university's / global notice
       const expired=a.expiry<now;
       const col=ANN_COLORS[a.type]||ANN_COLORS.info;
       const uniName = a.universityId ? ((universities.find(u=>u.id===a.universityId)||{}).name || a.universityId) : null;
@@ -733,7 +783,7 @@ function loadAdminAnnouncements(){
 
 function deleteAnnouncement(id){
   if(!db||!id)return;
-  db.ref('medistudy_announcements/'+id).remove().then(()=>loadAdminAnnouncements());
+  adminTrack(db.ref('medistudy_announcements/'+id).remove(),'Announcement deleted').then(ok=>{ if(ok) loadAdminAnnouncements(); else alert('❌ Not deleted.'); });
 }
 
 function addEssential(){
@@ -957,7 +1007,7 @@ function publishManualMCQ(){
   const btn=document.getElementById('mq-pub-btn');
   btn.disabled=true;btn.textContent='Publishing...';
   const id='mcq_'+Date.now();
-  db.ref('medistudy_mcq/'+id).set({id,subject,subjectId,courseId,universityId:ADMIN_ACTIVE_UNIVERSITY_ID,qs:_manualQs,ts:Date.now(),count:_manualQs.length})
+  adminTrackStrict(db.ref('medistudy_mcq/'+id).set({id,subject,subjectId,courseId,universityId:ADMIN_ACTIVE_UNIVERSITY_ID,qs:_manualQs,ts:Date.now(),count:_manualQs.length}),'Published')
     .then(()=>{
       const s=document.getElementById('mq-pub-success');
       s.style.display='block';setTimeout(()=>s.style.display='none',2500);
@@ -1077,7 +1127,7 @@ function publishMCQSet(){
   const id='mcq_'+Date.now();
   const btn=document.getElementById('mcq-pub-btn');
   btn.disabled=true;btn.textContent='Publishing...';
-  db.ref('medistudy_mcq/'+id).set({id,subject,subjectId,courseId,universityId:ADMIN_ACTIVE_UNIVERSITY_ID,qs,ts:Date.now(),count:qs.length})
+  adminTrackStrict(db.ref('medistudy_mcq/'+id).set({id,subject,subjectId,courseId,universityId:ADMIN_ACTIVE_UNIVERSITY_ID,qs,ts:Date.now(),count:qs.length}),'Published')
     .then(()=>{
       const s=document.getElementById('mcq-pub-success');
       s.style.display='block';setTimeout(()=>s.style.display='none',2500);
@@ -1115,7 +1165,7 @@ function loadAdminMCQSets(){
 function deleteAdminMCQ(id){
   if(!db||!id)return;
   if(!confirm('Delete this MCQ set?'))return;
-  db.ref('medistudy_mcq/'+id).remove().then(()=>loadAdminMCQSets());
+  adminTrack(db.ref('medistudy_mcq/'+id).remove(),'MCQ set deleted').then(ok=>{ if(ok) loadAdminMCQSets(); else alert('❌ Not deleted.'); });
 }
 
 // ═══════════════ ADMIN: STUDENTS LIST ═══════════════
@@ -1171,6 +1221,7 @@ function renderStudentsList(){
     return `<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:12px;">
       <div style="font-weight:700;margin-bottom:2px;">${escapeHTML(s.name)}</div>
       <div style="color:var(--muted);">✉️ ${escapeHTML(s.email)}</div>
+      <div style="color:var(--muted);font-size:10px;">🆔 ${escapeHTML(s.uid)}</div>
       <div style="color:var(--muted);">🎓 ${escapeHTML(s.course)} &nbsp; ⚧ ${escapeHTML(s.gender)} &nbsp; 🎂 ${escapeHTML(String(s.age))}</div>
       <div style="color:var(--muted);">🕒 Last login: ${when} &nbsp; ⏱ ${s.totalHours.toFixed(1)}h logged</div>
     </div>`;
@@ -1341,3 +1392,69 @@ function saveFeedbackReply(key,btn){
   }).catch(e=>alert('Could not save reply: '+e.message));
 }
 
+
+
+// ═══════════════ ADMIN ROLES (super admin only) ═══════════════
+// medistudy_admins/<uid> = { role:'uni', universities:{ <universityId>:true } }
+// The Firebase rules read this same table, so a university admin physically cannot write to another university.
+let _rolesCache={};
+function loadAdminRoles(){
+  const el=document.getElementById('admin-roles-list');
+  const sel=document.getElementById('role-uni-sel');
+  if(!el||!db) return;
+  if(sel) sel.innerHTML=universities.map(u=>`<option value="${escapeHTML(u.id)}">${escapeHTML(u.name)} (${escapeHTML(u.id)})</option>`).join('');
+  el.innerHTML='Loading...';
+  Promise.all([db.ref('medistudy_admins').once('value'), db.ref('users').once('value')]).then(([aSnap,uSnap])=>{
+    _rolesCache=aSnap.val()||{};
+    const users=uSnap.val()||{};
+    const uids=Object.keys(_rolesCache);
+    if(!uids.length){ el.innerHTML='<div style="color:var(--muted);font-size:12px;">No university admins yet.</div>'; return; }
+    el.innerHTML=uids.map(uid=>{
+      const r=_rolesCache[uid]||{};
+      const email=(users[uid]&&users[uid].email)||'(email unknown)';
+      const unis=Object.keys(r.universities||{}).filter(k=>r.universities[k]===true);
+      const chips=unis.map(u=>{
+        const nm=(universities.find(x=>x.id===u)||{}).name||u;
+        return `<span style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:2px 4px 2px 10px;font-size:11px;margin:3px 4px 0 0;">${escapeHTML(nm)} <button onclick="revokeUniversityAdmin('${uid}','${u}')" style="background:#e85d38;border:none;color:#fff;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;">✕</button></span>`;
+      }).join('');
+      return `<div style="background:var(--card);border:1px solid var(--border);border-radius:9px;padding:9px 11px;margin-bottom:6px;"><div style="font-size:12px;font-weight:700;">${escapeHTML(email)}</div><div style="font-size:10px;color:var(--muted);word-break:break-all;">${escapeHTML(uid)}</div>${chips}</div>`;
+    }).join('');
+  }).catch(e=>{ el.innerHTML='<span style="color:#e85d38;font-size:12px;">Could not load: '+escapeHTML(e.message)+'</span>'; });
+}
+async function grantUniversityAdmin(){
+  const st=document.getElementById('role-status');
+  const who=document.getElementById('role-who-inp').value.trim();
+  const uni=document.getElementById('role-uni-sel').value;
+  const say=(m,bad)=>{ st.innerHTML=bad?'<span style="color:#e85d38">'+m+'</span>':m; };
+  if(adminRole!=='super'){ say('❌ Super admin only.',true); return; }
+  if(!who||!uni){ say('Enter their email (or UID) and pick a university.',true); return; }
+  try{
+    let uid=null;
+    if(who.includes('@')){
+      const users=(await db.ref('users').once('value')).val()||{};
+      const hit=Object.keys(users).filter(k=>(((users[k]||{}).email)||'').toLowerCase()===who.toLowerCase());
+      if(hit.length!==1){ say('❌ No single account found for that email. They must sign in to MediStudy once first — or paste their UID instead.',true); return; }
+      uid=hit[0];
+    } else {
+      if(!/^[A-Za-z0-9]{20,40}$/.test(who)){ say('❌ That does not look like a UID.',true); return; }
+      uid=who;
+    }
+    if(uid===SUPER_UID){ say('That is you — you are already super admin.',true); return; }
+    const updates={};
+    updates['medistudy_admins/'+uid+'/role']='uni';
+    updates['medistudy_admins/'+uid+'/universities/'+uni]=true;
+    await db.ref().update(updates);
+    document.getElementById('role-who-inp').value='';
+    say('✅ Done. They can now open the admin panel (with the admin/editor password) and manage '+escapeHTML(uni)+'.');
+    loadAdminRoles();
+  }catch(e){ say('❌ Failed: '+escapeHTML(e.message),true); }
+}
+function revokeUniversityAdmin(uid,uniId){
+  if(!confirm('Remove admin rights for '+uniId+' from this person?')) return;
+  const r=_rolesCache[uid]||{};
+  const remaining=Object.keys(r.universities||{}).filter(k=>k!==uniId&&r.universities[k]===true);
+  const updates={};
+  if(remaining.length) updates['medistudy_admins/'+uid+'/universities/'+uniId]=null;
+  else updates['medistudy_admins/'+uid]=null;
+  db.ref().update(updates).then(loadAdminRoles).catch(e=>alert('Failed: '+e.message));
+}
