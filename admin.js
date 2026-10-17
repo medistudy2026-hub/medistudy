@@ -87,10 +87,6 @@ function openAdmin(){
   document.getElementById('admin-panel').style.display='none';
   document.getElementById('admin-pw').value='';
   document.getElementById('login-err').style.display='none';
-  // Admins no longer need a shared password: signing in with their own account is enough
-  resolveAdminAccess().then(access=>{
-    if(access && !adminUnlocked){ adminUnlocked=true; adminRole=access.role; adminUniversities=access.universities; showPanel(); }
-  });
 }
 function closeAdmin(){document.getElementById('admin-modal').classList.remove('open');}
 
@@ -118,11 +114,16 @@ function checkPw(){
     const hashArray=Array.from(new Uint8Array(hashBuffer));
     const hashHex=hashArray.map(b=>b.toString(16).padStart(2,'0')).join('');
     if(hashHex===SPONSOR_HASH){ adminUnlocked=true;adminRole='sponsor';adminUniversities=null;showPanel();return; }
-    // Admins and editors: no password — their own signed-in account decides what they may do
+    // Two locks: (1) a password for the account type, (2) the signed-in account itself.
+    //   super admin → PASS_HASH password;  university admins → one shared EDITOR_HASH password.
+    if(hashHex!==PASS_HASH && hashHex!==EDITOR_HASH){ showErr('❌ Wrong password.'); return; }
+    if(!(currentUser||(auth&&auth.currentUser))){ showErr('❌ Sign in to MediStudy with your own account first (profile icon), then open this panel again.'); return; }
     const access=await resolveAdminAccess();
-    if(access){ adminUnlocked=true; adminRole=access.role; adminUniversities=access.universities; showPanel(); return; }
-    if(!(currentUser||(auth&&auth.currentUser))) showErr('❌ Sign in to MediStudy with your own account first (profile icon), then open this panel again.');
-    else showErr('❌ This account has no admin rights. Ask the super admin to add you.');
+    if(!access){ showErr('❌ This account has no admin rights. Ask the super admin to add you.'); return; }
+    const right = access.role==='super' ? PASS_HASH : EDITOR_HASH;
+    if(hashHex!==right){ showErr('❌ Wrong password for your account type.'); return; }
+    adminUnlocked=true; adminRole=access.role; adminUniversities=access.universities;
+    showPanel();
   });
 }
 function showPanel(){
