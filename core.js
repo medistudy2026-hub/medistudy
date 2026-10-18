@@ -590,7 +590,7 @@ function showProfileEdit(){
   document.getElementById('profile-name-inp').value = userProfile.name;
   const uniSel=document.getElementById('profile-university-inp');
   uniSel.onchange = ()=>{ populateProfileCourseOptions(uniSel.value, ''); updateJoinCodeUI(); };
-  document.getElementById('profile-joincode-inp').value='';
+  const _jc=document.getElementById('profile-joincode-inp'); if(_jc) _jc.value=''; // guard: an older cached page may not have this box yet
   function renderUniOptions(){
     uniSel.innerHTML='<option value="">Select your university...</option>'+universities.map(u=>`<option value="${u.id}">${escapeHTML(u.name)}</option>`).join('');
     // New students choose deliberately (blank); existing ones keep what they have
@@ -634,7 +634,8 @@ function saveProfile(){
   if(joinedUniversity && uniVal && uniVal!==joinedUniversity){ alert('Your university is locked after joining. Ask your admin if it is wrong.'); return; }
   if(!uniVal || uniVal===exempt){ _saveProfileNow(); return; }
   const uniName=(universities.find(u=>u.id===uniVal)||{}).name||uniVal;
-  const code=document.getElementById('profile-joincode-inp').value.trim().toUpperCase();
+  const _jcEl=document.getElementById('profile-joincode-inp');
+  const code=(_jcEl?_jcEl.value:'').trim().toUpperCase();
   if(!code){ alert('Enter the join code for '+uniName+'. Ask your university admin for it.'); return; }
   if(!db||!currentUser){ alert('Sign in first, then save your profile.'); return; }
   const btn=document.querySelector('#profile-edit-form .profile-edit-btn');
