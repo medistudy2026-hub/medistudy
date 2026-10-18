@@ -125,6 +125,12 @@
           <option value="">Select your university...</option>
         </select>
       </div>
+      <div id="profile-lock-note" style="display:none;font-size:11px;color:var(--muted);margin:-4px 0 10px;line-height:1.5;">🔒 Your university is locked after joining. Wrong university? Ask your admin.</div>
+      <div class="form-group" id="profile-joincode-box" style="display:none;margin-bottom:10px;">
+        <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:5px;">JOIN CODE</label>
+        <input type="text" id="profile-joincode-inp" class="lb-input" placeholder="Code from your university admin" autocapitalize="characters" autocomplete="off" style="margin-bottom:0;text-transform:uppercase;letter-spacing:2px;">
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Your university admin gives you this code. You only enter it once.</div>
+      </div>
       <div class="form-group" style="margin-bottom:10px;">
         <label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:5px;">COURSE</label>
         <select id="profile-course-inp" class="lb-input" style="margin-bottom:0;">
@@ -605,7 +611,14 @@
       </div>
       <!-- STRUCTURE -->
       <div class="aform active" id="aform-structure">
-        <div id="admin-add-university"><div class="section-label">🏫 Add a New University</div>
+        <div class="section-label">🔑 Join code for this university</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.6;">New students must enter this code to join the university selected above. Give it to your students (e.g. in the WhatsApp group). A new code stops working for new joiners only — students who already joined stay joined.</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+          <div id="join-code-display" style="flex:1;font-family:monospace;font-size:20px;font-weight:800;letter-spacing:3px;color:var(--accent);">—</div>
+          <button class="edit-btn" onclick="copyJoinCode()">📋 Copy</button>
+          <button class="edit-btn" onclick="newJoinCode()">🔄 New code</button>
+        </div>
+        <div id="admin-add-university" style="margin-top:14px;"><div class="section-label">🏫 Add a New University</div>
         <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Use the "Managing University" bar above to switch which university you're editing. Use this only to create a brand new one.</div>
         <div class="add-inline"><input type="text" id="new-uni-name" placeholder="New university name"><button onclick="addUniversity()">+ Add Uni</button></div>
         <div class="add-inline" style="margin-top:4px;"><input type="text" id="new-uni-id" placeholder="short id e.g. ksmu"></div></div>
