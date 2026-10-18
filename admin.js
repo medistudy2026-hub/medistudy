@@ -152,7 +152,7 @@ function showPanel(){
   document.querySelectorAll('.atab').forEach(t=>t.style.display='none');
   const tabs = isSuper
     ? ['structure','dashboard','notes','videos','manage','announce','essentials','mcq','students','feedback','firebase']
-    : ['structure','notes','videos','manage','mcq','announce','feedback']; // university admin: no Essentials/Students/Firebase; Dashboard returns in step 3 (it reads the users node)
+    : ['structure','notes','videos','manage','mcq','announce','feedback','students','dashboard']; // university admin: no Essentials/Firebase; Students/Dashboard/Feedback show only their own university
   tabs.forEach(t=>{ const el=document.getElementById('atab-'+t); if(el) el.style.display=''; });
   populateAdminUniversitySelect();
   populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();
@@ -202,7 +202,14 @@ function renderAdminCourses(){
 function adminBase(){ return 'medistudy_content/'+ADMIN_ACTIVE_UNIVERSITY_ID; }
 function cleanItem(o){ return JSON.parse(JSON.stringify(o)); } // drops undefined (Firebase rejects it)
 function itemPath(kind,item){ return adminBase()+'/'+item.courseId+'/'+kind+'/'+item.id; }
-function refreshAdminViews(){ populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();renderManage();loadJoinCode(); }
+function refreshAdminViews(){ populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();renderManage();loadJoinCode();refreshActiveAdminTab(); }
+// After switching "Managing University", reload whichever per-university tab is open
+function refreshActiveAdminTab(){
+  const act=document.querySelector('.aform.active'); if(!act) return;
+  if(act.id==='aform-students') loadStudentsList();
+  else if(act.id==='aform-dashboard') loadDashboard();
+  else if(act.id==='aform-feedback') loadFeedbackList();
+}
 // updates = {firebasePath: value|null}. Resolves true if saved. On any failure it says so and reloads the real data,
 // so the screen never silently shows something that was not actually saved.
 // ── Save feedback: the admin always sees ⏳ Saving… → ✅ Saved or ❌ NOT saved (tap to dismiss) ──
@@ -1172,42 +1179,54 @@ function deleteAdminMCQ(id){
 }
 
 // ═══════════════ ADMIN: STUDENTS LIST ═══════════════
+// Per university: medistudy_directory/<uni> holds each student's name, course and last login (written by the student's
+// own app). Only that university's admins and the super admin can read it. The super admin additionally sees
+// email / gender / age from the users node, which nobody else can read.
 let _allStudents=[];
+let _totalStudyHours=0;
+let _studentsAccountsOverall=null;
+function uniDisplayName(id){ return (universities.find(u=>u.id===id)||{}).name||id; }
 function loadStudentsList(){
   const listEl=document.getElementById('students-list');
   const sumEl=document.getElementById('students-summary');
   if(!db||!fbConnected){ listEl.innerHTML='<div style="color:var(--muted);font-size:12px;">Connect Firebase first.</div>'; return; }
+  const uni=ADMIN_ACTIVE_UNIVERSITY_ID, isSuper=adminRole==='super';
   sumEl.textContent='Loading...';
   listEl.innerHTML='';
   Promise.all([
-    db.ref('users').once('value'),
-    db.ref('medistudy_hours_lb').once('value')
-  ]).then(([usersSnap,hoursSnap])=>{
-    const data=usersSnap.val()||{};
-    const hoursData=hoursSnap.val()||{};
-    _totalStudyHours=Object.values(hoursData).reduce((sum,h)=>sum+(h.totalHours||0),0);
-    _allStudents=Object.keys(data).map(uid=>{
-      const u=data[uid]||{};
+    db.ref('medistudy_directory/'+uni).once('value'),
+    db.ref('medistudy_hours_lb').once('value'),
+    isSuper ? db.ref('users').once('value') : Promise.resolve(null)
+  ]).then(([dirSnap,hoursSnap,usersSnap])=>{
+    if(uni!==ADMIN_ACTIVE_UNIVERSITY_ID) return; // admin switched university meanwhile
+    const dir=dirSnap.val()||{};
+    const hours=hoursSnap.val()||{};
+    const users=usersSnap?(usersSnap.val()||{}):null;
+    _allStudents=Object.keys(dir).map(uid=>{
+      const d=dir[uid]||{};
+      const u=users?(users[uid]||{}):{};
       const p=u.profile||{};
+      const course=(courses.find(c=>c.id===d.course)||{}).name||(d.course?String(d.course):'—');
       return {
         uid,
-        name: p.name||'(no name set)',
-        email: u.email||'—',
-        course: p.course||'—',
-        gender: p.gender||'—',
-        age: p.age||'—',
-        lastLogin: u.lastLogin||0,
-        totalHours: (hoursData[uid]&&hoursData[uid].totalHours)||0
+        name: d.name||'(no name set)',
+        email: users?(u.email||'—'):null,
+        course,
+        gender: users?(p.gender||'—'):null,
+        age: users?(p.age||'—'):null,
+        lastLogin: d.lastLogin||0,
+        totalHours: (hours[uid]&&hours[uid].totalHours)||0
       };
     }).sort((a,b)=>b.lastLogin-a.lastLogin);
+    _totalStudyHours=_allStudents.reduce((s,x)=>s+x.totalHours,0);
+    _studentsAccountsOverall=users?Object.keys(users).length:null;
     renderStudentsList();
   },err=>{
     sumEl.textContent='';
-    listEl.innerHTML='<div style="color:#e85d38;font-size:12px;">⚠️ Could not load students. If this is a permissions error, your Firebase rules need to allow your admin account to read the "users" node.</div>';
+    listEl.innerHTML='<div style="color:#e85d38;font-size:12px;">⚠️ Could not load students. If this is a permissions error, publish the latest Firebase rules and check your account is an admin of this university.</div>';
     console.error(err);
   });
 }
-let _totalStudyHours=0;
 function renderStudentsList(){
   const listEl=document.getElementById('students-list');
   const sumEl=document.getElementById('students-summary');
@@ -1216,53 +1235,81 @@ function renderStudentsList(){
   const todayTs=startOfToday.getTime();
   const rows=todayOnly?_allStudents.filter(s=>s.lastLogin>=todayTs):_allStudents;
   const totalDays=(_totalStudyHours/24).toFixed(1);
-  sumEl.innerHTML=`${rows.length} of ${_allStudents.length} total registered students`+(todayOnly?' (logged in today)':'')+
-    `<br><strong style="color:var(--text);">⏱ Total time spent in app (all students combined): ${_totalStudyHours.toFixed(1)}h (~${totalDays} days)</strong>`;
+  const uniName=uniDisplayName(ADMIN_ACTIVE_UNIVERSITY_ID);
+  sumEl.innerHTML=`🏫 <strong style="color:var(--text);">${escapeHTML(uniName)}</strong><br>${rows.length} of ${_allStudents.length} students`+(todayOnly?' (logged in today)':'')+
+    `<br><strong style="color:var(--text);">⏱ Time in app (these students): ${_totalStudyHours.toFixed(1)}h (~${totalDays} days)</strong>`+
+    (_studentsAccountsOverall!==null?`<br>All accounts, all universities: ${_studentsAccountsOverall}. A student appears here once they open the updated app, or after you run "Fill student directory" (Firebase tab).`:'');
   if(!rows.length){ listEl.innerHTML='<div style="color:var(--muted);font-size:12px;">No students found.</div>'; return; }
   listEl.innerHTML=rows.map(s=>{
     const when=s.lastLogin?new Date(s.lastLogin).toLocaleString():'never';
     return `<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:12px;">
-      <div style="font-weight:700;margin-bottom:2px;">${escapeHTML(s.name)}</div>
-      <div style="color:var(--muted);">✉️ ${escapeHTML(s.email)}</div>
-      <div style="color:var(--muted);font-size:10px;">🆔 ${escapeHTML(s.uid)}</div>
-      <div style="color:var(--muted);">🎓 ${escapeHTML(s.course)} &nbsp; ⚧ ${escapeHTML(s.gender)} &nbsp; 🎂 ${escapeHTML(String(s.age))}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:2px;">
+        <div style="font-weight:700;">${escapeHTML(s.name)}</div>
+        <button class="del-btn" title="Remove from this university so they can choose again" onclick="resetStudentUniversity('${s.uid}')">🔓 Reset university</button>
+      </div>
+      ${s.email!==null?`<div style="color:var(--muted);">✉️ ${escapeHTML(s.email)}</div>
+      <div style="color:var(--muted);font-size:10px;">🆔 ${escapeHTML(s.uid)}</div>`:''}
+      <div style="color:var(--muted);">🎓 ${escapeHTML(s.course)}${s.gender!==null?` &nbsp; ⚧ ${escapeHTML(s.gender)} &nbsp; 🎂 ${escapeHTML(String(s.age))}`:''}</div>
       <div style="color:var(--muted);">🕒 Last login: ${when} &nbsp; ⏱ ${s.totalHours.toFixed(1)}h logged</div>
     </div>`;
   }).join('');
 }
+// Removes the student's join record and directory entry for the selected university. Their app then asks them to
+// choose a university and enter a join code again.
+function resetStudentUniversity(uid){
+  const uni=ADMIN_ACTIVE_UNIVERSITY_ID;
+  if(!confirm('Reset the university for this student?\n\nThey will be removed from '+uniDisplayName(uni)+' and asked to choose a university and enter a join code again.')) return;
+  const updates={};
+  updates['medistudy_members/'+uni+'/'+uid]=null;
+  updates['medistudy_directory/'+uni+'/'+uid]=null;
+  adminTrack(db.ref().update(updates),'Student reset').then(ok=>{
+    if(!ok){ alert('❌ Not reset.'); return; }
+    _allStudents=_allStudents.filter(s=>s.uid!==uid);
+    renderStudentsList();
+  });
+}
 
 // ═══════════════ ADMIN: DASHBOARD ═══════════════
+// Everything here is for the university selected in "Managing University".
 function loadDashboard(){
   const cardsEl=document.getElementById('dash-summary-cards');
   const likedEl=document.getElementById('dash-top-liked');
   if(!db||!fbConnected){ cardsEl.innerHTML='<div style="color:var(--muted);font-size:12px;">Connect Firebase first.</div>'; return; }
+  const uni=ADMIN_ACTIVE_UNIVERSITY_ID, isSuper=adminRole==='super';
   cardsEl.innerHTML='<div style="color:var(--muted);font-size:12px;">Loading...</div>';
   likedEl.innerHTML='';
 
   Promise.all([
-    db.ref('users').once('value'),
+    db.ref('medistudy_directory/'+uni).once('value'),
     db.ref('medistudy_hours_lb').once('value'),
-    db.ref('medistudy_feedback').orderByChild('timestamp').limitToLast(50).once('value'),
-    db.ref('medistudy_likes').once('value')
-  ]).then(([usersSnap,hoursSnap,fbSnap,likesSnap])=>{
-    // Students summary
-    const usersData=usersSnap.val()||{};
+    db.ref('medistudy_feedback').orderByChild('universityId').equalTo(uni).limitToLast(200).once('value'),
+    db.ref('medistudy_likes').once('value'),
+    isSuper ? db.ref('users').once('value') : Promise.resolve(null)
+  ]).then(([dirSnap,hoursSnap,fbSnap,likesSnap,usersSnap])=>{
+    if(uni!==ADMIN_ACTIVE_UNIVERSITY_ID) return; // admin switched university meanwhile
+    // Students of this university
+    const dir=dirSnap.val()||{};
+    const uids=Object.keys(dir);
     const hoursData=hoursSnap.val()||{};
-    const totalStudents=Object.keys(usersData).length;
-    const totalHours=Object.values(hoursData).reduce((s,h)=>s+(h.totalHours||0),0);
+    const totalHours=uids.reduce((s,id)=>s+((hoursData[id]&&hoursData[id].totalHours)||0),0);
+    const startOfToday=new Date(); startOfToday.setHours(0,0,0,0);
+    const activeToday=uids.filter(id=>((dir[id]||{}).lastLogin||0)>=startOfToday.getTime()).length;
+    const overall=usersSnap?Object.keys(usersSnap.val()||{}).length:null;
 
-    // New feedback count
+    // New feedback count (this university)
     const fbData=fbSnap.val()||{};
     const newCount=Object.values(fbData).filter(f=>(f.status||'New')==='New').length;
 
-    // Notes/Videos totals (already in-memory)
+    // Notes/Videos totals (already in memory for the selected university)
     const noteCount=notes.length, vidCount=videos.length;
 
     cardsEl.innerHTML=`
+      <div style="font-size:12px;color:var(--muted);">🏫 <strong style="color:var(--text);">${escapeHTML(uniDisplayName(uni))}</strong></div>
       <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;">
         <div style="font-size:12px;color:var(--muted);">👥 Students</div>
-        <div style="font-size:18px;font-weight:800;">${totalStudents} <span style="font-size:12px;font-weight:400;color:var(--muted);">registered</span></div>
+        <div style="font-size:18px;font-weight:800;">${uids.length} <span style="font-size:12px;font-weight:400;color:var(--muted);">in this university</span> &nbsp; ${activeToday} <span style="font-size:12px;font-weight:400;color:var(--muted);">logged in today</span></div>
         <div style="font-size:12px;color:var(--muted);margin-top:2px;">⏱ ${totalHours.toFixed(1)}h combined time in app</div>
+        ${overall!==null?`<div style="font-size:11px;color:var(--muted);margin-top:2px;">All accounts, all universities: ${overall}</div>`:''}
       </div>
       <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;">
         <div style="font-size:12px;color:var(--muted);">💬 Feedback</div>
@@ -1274,9 +1321,10 @@ function loadDashboard(){
       </div>
     `;
 
-    // Top liked notes
+    // Top liked notes — only this university's own notes
     const likesData=likesSnap.val()||{};
-    const likeCounts=Object.keys(likesData).map(noteId=>({
+    const myNoteIds=new Set(notes.map(n=>n.id));
+    const likeCounts=Object.keys(likesData).filter(noteId=>myNoteIds.has(noteId)).map(noteId=>({
       noteId, count:Object.keys(likesData[noteId]||{}).length
     })).filter(x=>x.count>0).sort((a,b)=>b.count-a.count).slice(0,10);
 
@@ -1291,7 +1339,7 @@ function loadDashboard(){
       </div>`;
     }).join('');
   },err=>{
-    cardsEl.innerHTML='<div style="color:#e85d38;font-size:12px;">⚠️ Could not load dashboard data.</div>';
+    cardsEl.innerHTML='<div style="color:#e85d38;font-size:12px;">⚠️ Could not load dashboard data. Publish the latest Firebase rules and check your account is an admin of this university.</div>';
     console.error(err);
   });
 }
@@ -1305,7 +1353,7 @@ function loadFeedbackList(){
   if(!db||!fbConnected){ listEl.innerHTML='<div style="color:var(--muted);font-size:12px;">Connect Firebase first.</div>'; return; }
   sumEl.textContent='Loading...';
   listEl.innerHTML='';
-  db.ref('medistudy_feedback').orderByChild('timestamp').limitToLast(50).once('value',snap=>{
+  db.ref('medistudy_feedback').orderByChild('universityId').equalTo(ADMIN_ACTIVE_UNIVERSITY_ID).limitToLast(50).once('value',snap=>{
     const data=snap.val()||{};
     _allFeedback=Object.keys(data).map(key=>{
       const f=data[key]||{};
@@ -1338,7 +1386,7 @@ function renderFeedbackList(){
   if(statusFilter) rows=rows.filter(f=>f.status===statusFilter);
   const avgRating=_allFeedback.length?(_allFeedback.reduce((s,f)=>s+f.rating,0)/_allFeedback.length).toFixed(1):'—';
   const newCount=_allFeedback.filter(f=>f.status==='New').length;
-  sumEl.textContent=`${rows.length} of ${_allFeedback.length} loaded (newest 50) · ${newCount} New · avg rating ${avgRating}★`;
+  sumEl.textContent=`🏫 ${uniDisplayName(ADMIN_ACTIVE_UNIVERSITY_ID)} · ${rows.length} of ${_allFeedback.length} loaded (newest 50) · ${newCount} New · avg rating ${avgRating}★`;
   if(!rows.length){ listEl.innerHTML='<div style="color:var(--muted);font-size:12px;">No feedback found.</div>'; return; }
   listEl.innerHTML=rows.map(f=>{
     const when=f.timestamp?new Date(f.timestamp).toLocaleString():'—';
@@ -1499,4 +1547,56 @@ function copyJoinCode(){
   if(!code){ alert('No code yet — tap "New code" first.'); return; }
   if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(code).then(()=>adminToast('📋 Copied: '+code,'ok',2000)).catch(()=>prompt('Copy this code:',code));
   else prompt('Copy this code:',code);
+}
+
+
+// ═══════════════ ONE-TIME TOOLS (super admin only) ═══════════════
+// Fill every university's student directory from the existing accounts, so the Students tab and Dashboard are
+// complete straight away instead of filling in as students open the updated app.
+async function backfillDirectory(){
+  const st=document.getElementById('fb-dir-status');
+  const say=(m,bad)=>{ st.innerHTML=bad?'<span style="color:#e85d38">'+m+'</span>':m; };
+  if(adminRole!=='super'){ say('❌ Super admin only.',true); return; }
+  if(!fbConnected||!db){ say('❌ Not connected to Firebase.',true); return; }
+  if(!confirm('Fill the student directory from existing accounts?\n\nAccounts that have not joined another university count as Ulyanovsk. Safe to re-run.')) return;
+  say('⏳ Reading accounts...');
+  try{
+    const reads=await Promise.all([db.ref('users').once('value')].concat(universities.map(u=>db.ref('medistudy_members/'+u.id).once('value'))));
+    const users=reads[0].val()||{};
+    const memberOf={};
+    universities.forEach((u,i)=>{ Object.keys(reads[i+1].val()||{}).forEach(uid=>{ if(!memberOf[uid]) memberOf[uid]=u.id; }); });
+    const valid=new Set(universities.map(u=>u.id));
+    const updates={}, per={}; let n=0;
+    Object.keys(users).forEach(uid=>{
+      const u=users[uid]||{}, p=u.profile||{};
+      const uni=memberOf[uid]||(valid.has(p.university)?p.university:DEFAULT_UNIVERSITY_ID);
+      updates['medistudy_directory/'+uni+'/'+uid]={name:p.name||'(no name set)', course:p.course||'', lastLogin:u.lastLogin||0};
+      per[uni]=(per[uni]||0)+1; n++;
+    });
+    if(!n){ say('✅ No accounts found — nothing to fill.'); return; }
+    const keys=Object.keys(updates);
+    for(let i=0;i<keys.length;i+=400){
+      say('⏳ Writing '+Math.min(i+400,keys.length)+' of '+keys.length+'...');
+      const chunk={}; keys.slice(i,i+400).forEach(k=>{ chunk[k]=updates[k]; });
+      await db.ref().update(chunk);
+    }
+    say('✅ Directory filled: '+Object.keys(per).map(k=>escapeHTML(uniDisplayName(k))+' '+per[k]).join(', ')+'.');
+  }catch(e){ say('❌ Failed: '+escapeHTML(e.message),true); }
+}
+// Feedback is now kept per university. Old feedback has no university tag, so tag it as Ulyanovsk.
+async function tagOldFeedback(){
+  const st=document.getElementById('fb-tagfb-status');
+  const say=(m,bad)=>{ st.innerHTML=bad?'<span style="color:#e85d38">'+m+'</span>':m; };
+  if(adminRole!=='super'){ say('❌ Super admin only.',true); return; }
+  if(!fbConnected||!db){ say('❌ Not connected to Firebase.',true); return; }
+  if(!confirm('Tag all feedback that has no university as Ulyanovsk?')) return;
+  say('⏳ Reading feedback...');
+  try{
+    const d=(await db.ref('medistudy_feedback').once('value')).val()||{};
+    const updates={}; let n=0;
+    Object.keys(d).forEach(k=>{ if(d[k] && typeof d[k]==='object' && d[k].universityId===undefined){ updates['medistudy_feedback/'+k+'/universityId']=DEFAULT_UNIVERSITY_ID; n++; } });
+    if(!n){ say('✅ Nothing to tag — all feedback already has a university.'); return; }
+    await db.ref().update(updates);
+    say('✅ Tagged '+n+' feedback entr'+(n===1?'y':'ies')+' as Ulyanovsk.');
+  }catch(e){ say('❌ Failed: '+escapeHTML(e.message),true); }
 }

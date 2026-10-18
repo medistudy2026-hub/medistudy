@@ -344,8 +344,8 @@
       <button class="submit-btn" onclick="submitFeedback()">📨 Send Feedback</button>
       <div class="success-msg" id="fb-success">✅ Thanks! Your feedback has been sent.</div>
       <div style="margin-top:16px;">
-        <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;">📋 COMMUNITY FEEDBACK</div>
-        <div id="my-feedback-list" style="font-size:12px;color:var(--muted);">Sign in to see feedback from everyone.</div>
+        <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;">📋 FEEDBACK FROM YOUR UNIVERSITY</div>
+        <div id="my-feedback-list" style="font-size:12px;color:var(--muted);">Sign in to see feedback from your university.</div>
       </div>
     </div>
   </div>
@@ -929,6 +929,25 @@ Answer: B — optional explanation
           </div>
           <button class="submit-btn" onclick="migrateQuizLeaderboard()" style="background:var(--blue);color:#fff;">🏆 Migrate Leaderboard</button>
           <div id="fb-lb-migrate-status" style="font-size:12px;margin-top:8px;line-height:1.6;"></div>
+        </div>
+
+        <div style="background:#0e1a2e;border:1px solid var(--blue);border-radius:10px;padding:14px;margin-top:16px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px;color:var(--blue);">👥 Fill student directory (one-time)</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:10px;">
+            Each university's Students tab and Dashboard read a per-university student directory. Every student's app fills in its own entry the next time they open the updated app. This fills it now from your existing accounts, so Ulyanovsk shows up straight away.
+            Accounts that haven't joined another university count as Ulyanovsk — <strong>run this before students of other universities start signing up</strong>. Safe to re-run.
+          </div>
+          <button class="submit-btn" onclick="backfillDirectory()" style="background:var(--blue);color:#fff;">👥 Fill student directory</button>
+          <div id="fb-dir-status" style="font-size:12px;margin-top:8px;line-height:1.6;"></div>
+        </div>
+
+        <div style="background:#1a1006;border:1px solid var(--accent);border-radius:10px;padding:14px;margin-top:16px;">
+          <div style="font-size:13px;font-weight:700;margin-bottom:6px;color:var(--accent);">💬 Tag old feedback as Ulyanovsk (one-time)</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:10px;">
+            Feedback is now kept per university. Feedback sent before this update has no university tag, so it would not show anywhere. This tags all untagged feedback as Ulyanovsk. Safe to re-run.
+          </div>
+          <button class="submit-btn" onclick="tagOldFeedback()" style="background:var(--accent);color:#000;">💬 Tag old feedback</button>
+          <div id="fb-tagfb-status" style="font-size:12px;margin-top:8px;line-height:1.6;"></div>
         </div>
 
         

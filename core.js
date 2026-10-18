@@ -541,7 +541,22 @@ function loadMembership(){
     } else if(!failed){
       joinedUniversity=null; localStorage.removeItem('ms_joined_uni');
     }
+    syncDirectory();
   }).catch(e=>console.warn('Membership check failed:',e));
+}
+// Student directory: this student's own small record (name, course, last login) under their university, so that
+// university's admins can see their students without being able to read anyone's private data (planner, goals, email).
+let _dirSyncedFor=null;
+function syncDirectory(force){
+  if(!db||!currentUser) return;
+  if(!force && _dirSyncedFor===currentUser.uid) return;
+  _dirSyncedFor=currentUser.uid;
+  const uni=getStudentUniversityId();
+  db.ref('medistudy_directory/'+uni+'/'+currentUser.uid).set({
+    name: userProfile.name||currentUser.displayName||'(no name set)',
+    course: userProfile.course||'',
+    lastLogin: Date.now()
+  }).catch(e=>console.warn('Directory sync failed:',e));
 }
 
 function getInitials(name){
@@ -645,6 +660,8 @@ function saveProfile(){
   const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000));
   Promise.race([write,timeout]).then(()=>{
     joinedUniversity=uniVal; localStorage.setItem('ms_joined_uni',uniVal);
+    // leaving the old (Ulyanovsk, grandfathered) university: remove the old directory entry so the student is counted once
+    if(exempt && exempt!==uniVal && currentUser) db.ref('medistudy_directory/'+exempt+'/'+currentUser.uid).remove().catch(()=>{});
     reset(); _saveProfileNow();
   }).catch(e=>{
     reset();
@@ -664,6 +681,7 @@ function _saveProfileNow(){
   userProfile.age = ageVal ? parseInt(ageVal) : '';
   localStorage.setItem('ms_profile', JSON.stringify(userProfile));
   syncToFirebase('profile', userProfile);
+  syncDirectory(true);
   updateProfileUI();
   showProfileView();
   if(typeof trackCourseUserProperty==='function')trackCourseUserProperty();

@@ -1,7 +1,8 @@
 // MediStudy Service Worker — sw.js
 // Works on GitHub Pages (/medistudy/) and any custom domain
-const CACHE_NAME = 'medistudy-shell-v19';
+const CACHE_NAME = 'medistudy-shell-v20';
 const SKIP_WAITING_MSG = 'SKIP_WAITING';
+const NAV_TIMEOUT_MS = 4000; // how long to wait for the network before showing the saved page
 
 // Core app shell — cached upfront on install so offline mode works
 // from the very first load, not just after each file has been fetched once.
@@ -54,30 +55,26 @@ self.addEventListener('fetch', e => {
   ];
   if (externalApis.some(api => url.includes(api))) return;
 
-  // Navigation requests — Cache First
+  // Navigation requests — Network First: always try for the newest page, so updates show on the FIRST open.
+  // Falls back to the saved copy when offline, when the server errors, or if the network takes longer than 4s
+  // (slow connections) — the saved copy is then shown and the download keeps going to refresh it for next time.
   if (e.request.mode === 'navigate') {
     e.respondWith(
-      caches.open(CACHE_NAME).then(cache =>
-        cache.match(e.request).then(cached => {
-          // Background refresh to keep cache fresh
-          fetch(e.request)
-            .then(res => { if (res && res.ok) cache.put(e.request, res.clone()); })
-            .catch(() => {});
-
-          if (cached) return cached;
-
-          // Not cached yet — try network
-          return fetch(e.request).catch(() => {
-            // Last resort: find ANY cached page in our cache
-            return caches.open(CACHE_NAME).then(c =>
-              c.keys().then(keys => {
-                const page = keys.find(k => k.url && k.url.includes('.html') || k.url.endsWith('/'));
-                return page ? c.match(page) : null;
-              })
-            );
-          });
-        })
-      )
+      caches.open(CACHE_NAME).then(cache => {
+        const network = fetch(e.request).then(res => {
+          if (res && res.ok) { cache.put(e.request, res.clone()); return res; }
+          return Promise.reject(new Error('bad response'));
+        });
+        const slow = new Promise(resolve => setTimeout(() => resolve(null), NAV_TIMEOUT_MS));
+        const fromCache = () =>
+          cache.match(e.request, { ignoreSearch: true })
+            .then(c => c || cache.match('index.html', { ignoreSearch: true }))
+            .then(c => c || cache.match('./', { ignoreSearch: true }));
+        return Promise.race([network.catch(() => null), slow]).then(res => {
+          if (res) return res;
+          return fromCache().then(cached => cached || network.catch(() => fromCache()));
+        });
+      })
     );
     return;
   }

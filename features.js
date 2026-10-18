@@ -1410,6 +1410,7 @@ function submitFeedback(){
   const courseObj = (typeof courses!=='undefined') ? courses.find(c=>c.id===userProfile.course) : null;
   const entry={
     uid: currentUser.uid,
+    universityId: getStudentUniversityId(),
     name: userProfile.name || currentUser.email || 'Unknown',
     course: courseObj ? courseObj.name : (userProfile.course||'—'),
     rating: fbRating,
@@ -1434,10 +1435,10 @@ function submitFeedback(){
 function loadMyFeedback(){
   const listEl=document.getElementById('my-feedback-list');
   if(!listEl)return;
-  if(!currentUser){ listEl.innerHTML='Sign in to see feedback from everyone.'; return; }
+  if(!currentUser){ listEl.innerHTML='Sign in to see feedback from your university.'; return; }
   if(!db){ listEl.innerHTML='Not connected yet.'; return; }
   listEl.innerHTML='Loading...';
-  db.ref('medistudy_feedback').orderByChild('timestamp').limitToLast(50).once('value',snap=>{
+  db.ref('medistudy_feedback').orderByChild('universityId').equalTo(getStudentUniversityId()).limitToLast(50).once('value',snap=>{
     const data=snap.val()||{};
     const rows=Object.keys(data).map(key=>{
       const f=data[key]||{};
