@@ -505,6 +505,45 @@ window.addEventListener('beforeinstallprompt', e => {
 // ═══════════════ PROFILE ═══════════════
 let userProfile = JSON.parse(localStorage.getItem('ms_profile') || '{"name":"","university":"","course":"","gender":"","age":""}');
 
+// ── University membership (join code) ──
+// A student joins a university by entering that university's join code. Firebase checks the code itself
+// (medistudy_members/<uni>/<uid> can only be created if the code matches), and a joined student's university is locked.
+// Students who were already using the app before join codes existed (a course set, and Ulyanovsk or nothing chosen)
+// are "grandfathered": they stay in Ulyanovsk without a code.
+let joinedUniversity = localStorage.getItem('ms_joined_uni') || null;
+function isGrandfathered(){
+  return !joinedUniversity && !!userProfile.course && (!userProfile.university || userProfile.university===DEFAULT_UNIVERSITY_ID);
+}
+function exemptUniversity(){ // the university this student may use without entering a code
+  return joinedUniversity || (isGrandfathered() ? DEFAULT_UNIVERSITY_ID : null);
+}
+function loadMembership(){
+  if(!db||!currentUser) return;
+  const myUid=currentUser.uid;
+  const getList = universities.length ? Promise.resolve(universities)
+    : db.ref('medistudy_universities').once('value').then(s=>{ const d=s.val(); if(d){ universities=d; localStorage.setItem('ms4_universities',JSON.stringify(d)); } return universities; });
+  getList.then(list=>{
+    let failed=false;
+    return Promise.all(list.map(u=>db.ref('medistudy_members/'+u.id+'/'+myUid).once('value').then(s=>s.exists()?u.id:null).catch(()=>{failed=true;return null;})))
+      .then(found=>({uni:found.find(Boolean)||null, failed}));
+  }).then(({uni,failed})=>{
+    if(uni){
+      joinedUniversity=uni; localStorage.setItem('ms_joined_uni',uni);
+      if(userProfile.university!==uni){
+        userProfile.university=uni;
+        localStorage.setItem('ms_profile',JSON.stringify(userProfile));
+        syncToFirebase('profile',userProfile);
+        subscribeToUniversityCourses(uni);
+        subscribeToCourseContent(uni, userProfile.course||null);
+        updateProfileUI();
+        if(document.getElementById('page-material').classList.contains('active'))renderMaterial();
+      }
+    } else if(!failed){
+      joinedUniversity=null; localStorage.removeItem('ms_joined_uni');
+    }
+  }).catch(e=>console.warn('Membership check failed:',e));
+}
+
 function getInitials(name){
   if(!name) return '👤';
   return name.trim().split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
@@ -550,12 +589,16 @@ function populateProfileCourseOptions(universityId, selectedCourseId){
 function showProfileEdit(){
   document.getElementById('profile-name-inp').value = userProfile.name;
   const uniSel=document.getElementById('profile-university-inp');
-  uniSel.onchange = ()=>populateProfileCourseOptions(uniSel.value, '');
+  uniSel.onchange = ()=>{ populateProfileCourseOptions(uniSel.value, ''); updateJoinCodeUI(); };
+  document.getElementById('profile-joincode-inp').value='';
   function renderUniOptions(){
     uniSel.innerHTML='<option value="">Select your university...</option>'+universities.map(u=>`<option value="${u.id}">${escapeHTML(u.name)}</option>`).join('');
-    const currentUni = userProfile.university || DEFAULT_UNIVERSITY_ID;
+    // New students choose deliberately (blank); existing ones keep what they have
+    const currentUni = joinedUniversity || userProfile.university || (isGrandfathered() ? DEFAULT_UNIVERSITY_ID : '');
     uniSel.value = universities.some(u=>u.id===currentUni) ? currentUni : '';
+    uniSel.disabled = !!joinedUniversity; // locked once joined
     populateProfileCourseOptions(uniSel.value, userProfile.course);
+    updateJoinCodeUI();
   }
   if(universities.length || !db){
     renderUniOptions();
@@ -574,11 +617,46 @@ function showProfileEdit(){
   document.getElementById('profile-view').style.display='none';
   document.getElementById('profile-edit-form').style.display='block';
 }
+// Shows the join-code box only when the chosen university needs one, and the lock note once joined
+function updateJoinCodeUI(){
+  const sel=document.getElementById('profile-university-inp');
+  const box=document.getElementById('profile-joincode-box');
+  const note=document.getElementById('profile-lock-note');
+  if(!sel||!box) return;
+  box.style.display = (sel.value && sel.value!==exemptUniversity()) ? 'block' : 'none';
+  if(note) note.style.display = joinedUniversity ? 'block' : 'none';
+}
+// Saving the profile: if the student picked a university that needs a code, check the code with Firebase first
 function saveProfile(){
+  const uniVal=document.getElementById('profile-university-inp').value;
+  const exempt=exemptUniversity();
+  if(!uniVal && !exempt){ alert('Please select your university.'); return; }
+  if(joinedUniversity && uniVal && uniVal!==joinedUniversity){ alert('Your university is locked after joining. Ask your admin if it is wrong.'); return; }
+  if(!uniVal || uniVal===exempt){ _saveProfileNow(); return; }
+  const uniName=(universities.find(u=>u.id===uniVal)||{}).name||uniVal;
+  const code=document.getElementById('profile-joincode-inp').value.trim().toUpperCase();
+  if(!code){ alert('Enter the join code for '+uniName+'. Ask your university admin for it.'); return; }
+  if(!db||!currentUser){ alert('Sign in first, then save your profile.'); return; }
+  const btn=document.querySelector('#profile-edit-form .profile-edit-btn');
+  const reset=()=>{ if(btn){ btn.disabled=false; btn.textContent='💾 Save Profile'; } };
+  if(btn){ btn.disabled=true; btn.textContent='Checking code…'; }
+  const write=db.ref('medistudy_members/'+uniVal+'/'+currentUser.uid).set({code:code, ts:Date.now()});
+  const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000));
+  Promise.race([write,timeout]).then(()=>{
+    joinedUniversity=uniVal; localStorage.setItem('ms_joined_uni',uniVal);
+    reset(); _saveProfileNow();
+  }).catch(e=>{
+    reset();
+    if(e.message==='timeout') alert('Could not reach the server. Check your internet and try again.');
+    else if(/permission/i.test(e.message)) alert('❌ That join code is not correct for '+uniName+'. Ask your university admin for the current code.');
+    else alert('Could not save: '+e.message);
+  });
+}
+function _saveProfileNow(){
   const prevCourse=userProfile.course;
   const prevUniversity=userProfile.university;
   userProfile.name = document.getElementById('profile-name-inp').value.trim();
-  userProfile.university = document.getElementById('profile-university-inp').value;
+  userProfile.university = document.getElementById('profile-university-inp').value || userProfile.university || '';
   userProfile.course = document.getElementById('profile-course-inp').value;
   userProfile.gender = document.getElementById('profile-gender-inp').value;
   const ageVal = document.getElementById('profile-age-inp').value;
@@ -643,7 +721,7 @@ function loadUserDataFromFirebase(){
   const ref = getUserRef();
   if(!ref) return;
   ref.once('value', snap=>{
-    if(!snap||!snap.exists()) return;
+    if(!snap||!snap.exists()){ loadMembership(); return; }
     const d = snap.val();
     // Merge Firebase data into local — Firebase wins (it's the source of truth)
     if(d.profile){
@@ -678,6 +756,7 @@ function loadUserDataFromFirebase(){
     // Refresh UI with synced data
     if(document.getElementById('page-planner').classList.contains('active')) renderPlanner();
     if(document.getElementById('page-saved').classList.contains('active')) renderSaved();
+    loadMembership(); // after the profile has loaded, so the joined university wins over anything stale in it
   });
 }
 

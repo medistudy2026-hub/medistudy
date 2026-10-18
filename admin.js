@@ -71,11 +71,13 @@ function addUniversity(){
     const updates={};
     updates['medistudy_universities']=updated;
     updates[`medistudy_courses/${id}`]=[{id:'c1',name:'1st Course'},{id:'c2',name:'2nd Course'},{id:'c3',name:'3rd Course'}];
+    const joinCode=randomJoinCode();
+    updates[`medistudy_join_codes/${id}`]=joinCode;
     db.ref().update(updates).then(()=>{
       universities=updated;
       nameInp.value='';idInp.value='';
       populateAdminUniversitySelect();
-      alert('✅ '+name+' added with 1st/2nd/3rd Course. Select it above to manage its content.');
+      alert('✅ '+name+' added with 1st/2nd/3rd Course.\n\nJoin code for its students: '+joinCode+'\n(You can see or change it any time in Structure → Join code.)\nSelect it above to manage its content.');
     }).catch(e=>alert('Failed: '+e.message));
   }).catch(e=>alert('Failed: '+e.message));
 }
@@ -200,7 +202,7 @@ function renderAdminCourses(){
 function adminBase(){ return 'medistudy_content/'+ADMIN_ACTIVE_UNIVERSITY_ID; }
 function cleanItem(o){ return JSON.parse(JSON.stringify(o)); } // drops undefined (Firebase rejects it)
 function itemPath(kind,item){ return adminBase()+'/'+item.courseId+'/'+kind+'/'+item.id; }
-function refreshAdminViews(){ populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();renderManage(); }
+function refreshAdminViews(){ populateAllSelects();renderAdminCourses();renderAdminSubjects();updateFolderCourseSubject();renderManage();loadJoinCode(); }
 // updates = {firebasePath: value|null}. Resolves true if saved. On any failure it says so and reloads the real data,
 // so the screen never silently shows something that was not actually saved.
 // ── Save feedback: the admin always sees ⏳ Saving… → ✅ Saved or ❌ NOT saved (tap to dismiss) ──
@@ -1458,4 +1460,43 @@ function revokeUniversityAdmin(uid,uniId){
   if(remaining.length) updates['medistudy_admins/'+uid+'/universities/'+uniId]=null;
   else updates['medistudy_admins/'+uid]=null;
   db.ref().update(updates).then(loadAdminRoles).catch(e=>alert('Failed: '+e.message));
+}
+
+
+// ═══════════════ JOIN CODE (per university) ═══════════════
+// medistudy_join_codes/<universityId> = the code. Only that university's admins and the super admin can read or change it.
+// Students never read it: Firebase itself compares what they type with the stored code when they join.
+function randomJoinCode(){
+  const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I/L — easy to read out and type
+  const b=new Uint8Array(8); crypto.getRandomValues(b);
+  return Array.from(b).map(x=>A[x%A.length]).join('');
+}
+function loadJoinCode(){
+  const el=document.getElementById('join-code-display');
+  if(!el||!db) return;
+  const uni=ADMIN_ACTIVE_UNIVERSITY_ID;
+  el.textContent='…'; el.dataset.code='';
+  db.ref('medistudy_join_codes/'+uni).once('value').then(s=>{
+    if(uni!==ADMIN_ACTIVE_UNIVERSITY_ID) return; // admin switched university meanwhile
+    const v=s.val();
+    el.textContent=v||'No code yet'; el.dataset.code=v||'';
+  }).catch(()=>{ el.textContent='—'; });
+}
+function newJoinCode(){
+  const el=document.getElementById('join-code-display');
+  const uni=ADMIN_ACTIVE_UNIVERSITY_ID;
+  const name=(universities.find(u=>u.id===uni)||{}).name||uni;
+  if(!confirm('Make a new join code for '+name+'?\n\nThe old code stops working for NEW students. Students who already joined stay joined.')) return;
+  const code=randomJoinCode();
+  adminTrack(db.ref('medistudy_join_codes/'+uni).set(code),'New join code saved').then(ok=>{
+    if(!ok){ alert('❌ The new code was NOT saved. The old code is still active.'); return; }
+    if(uni===ADMIN_ACTIVE_UNIVERSITY_ID && el){ el.textContent=code; el.dataset.code=code; }
+  });
+}
+function copyJoinCode(){
+  const el=document.getElementById('join-code-display');
+  const code=el&&el.dataset.code;
+  if(!code){ alert('No code yet — tap "New code" first.'); return; }
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(code).then(()=>adminToast('📋 Copied: '+code,'ok',2000)).catch(()=>prompt('Copy this code:',code));
+  else prompt('Copy this code:',code);
 }
