@@ -103,6 +103,7 @@
     <!-- Logged-out view -->
     <div id="profile-loggedout-view">
       <button class="profile-edit-btn" onclick="closeProfile();openLoginModal()" style="background:var(--accent);margin-bottom:6px;">🔐 Sign In / Create Account</button>
+      <button class="profile-close-btn" id="profile-guest-change" onclick="closeProfile();openWelcomeGuest()" style="display:none;margin-bottom:6px;">🎓 Change university / course</button>
       <button class="profile-close-btn" onclick="closeProfile()">Close</button>
     </div>
 
@@ -507,6 +508,34 @@
     <button class="pdf-nav-btn" id="pdf-prev-btn" onclick="pdfPrevPage()" disabled>◀ Prev</button>
     <span id="pdf-page-info">Page 1 of 1</span>
     <button class="pdf-nav-btn" id="pdf-next-btn" onclick="pdfNextPage()">Next ▶</button>
+  </div>
+</div>
+<!-- WELCOME (first open only) -->
+<div id="welcome-overlay" style="display:none;position:fixed;inset:0;z-index:150;background:var(--bg);overflow-y:auto;padding:24px 18px;">
+  <div style="max-width:380px;margin:0 auto;padding-top:6vh;">
+    <div style="text-align:center;font-size:46px;">🩺</div>
+    <h1 style="text-align:center;font-size:26px;margin:8px 0 4px;">Welcome to MediStudy</h1>
+    <p style="text-align:center;color:var(--muted);font-size:13px;margin:0 0 26px;">Your MBBS study companion</p>
+
+    <div id="welcome-step-choice">
+      <button class="submit-btn" onclick="welcomeSignIn()">🔐 Sign in or create account</button>
+      <button class="profile-close-btn" style="width:100%;margin-top:10px;" onclick="welcomeShowGuest()">👀 Continue as guest</button>
+      <p style="text-align:center;color:var(--muted);font-size:11.5px;line-height:1.6;margin-top:16px;">Guests can read notes and videos. Sign in later to join your university and unlock MediBot, Chat, Quiz, Planner and Progress.</p>
+    </div>
+
+    <div id="welcome-step-guest" style="display:none;">
+      <div class="form-group">
+        <label>YOUR UNIVERSITY</label>
+        <select id="welcome-uni" class="lb-input" onchange="welcomeUniChanged()" style="margin-bottom:0;"><option value="">Select your university...</option></select>
+      </div>
+      <div class="form-group">
+        <label>YOUR COURSE</label>
+        <select id="welcome-course" class="lb-input" style="margin-bottom:0;"><option value="">Select your course...</option></select>
+      </div>
+      <div id="welcome-err" style="color:#e85d38;font-size:12px;margin:0 0 8px;display:none;"></div>
+      <button class="submit-btn" onclick="welcomeStartGuest()">Start →</button>
+      <button class="profile-close-btn" style="width:100%;margin-top:10px;" onclick="welcomeBack()">← Back</button>
+    </div>
   </div>
 </div>
 <!-- LOGIN MODAL -->

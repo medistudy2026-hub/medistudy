@@ -85,6 +85,7 @@ function connectFirebase(){
   initFirebase(()=>{flashSuccess('fb-success','✅ Firebase connected!');updateFBStatus();updateHomeBanner();});
 }
 let auth=null, currentUser=null, authReady=false;
+let _welcomeActive=false; // true while the first-open welcome screen is showing
 // Fallback: if Firebase Auth doesn't load in 8s, unlock all pages anyway
 setTimeout(()=>{ if(!authReady){ authReady=true; } restoreLastScreen(); }, 8000);
 
@@ -105,6 +106,10 @@ function initFirebase(cb){
           const warnEl=document.getElementById('admin-signedin-warning');
           if(warnEl) warnEl.style.display = currentUser ? 'none' : 'block';
           if(user){
+            // First open → they chose "Sign in": close the welcome screen and ask for the profile.
+            // A guest who signs in later also gets the profile screen (to add their name and join code).
+            if(_welcomeActive){ hideWelcome(); _markWelcomeDone(); _promptProfileAfterSignIn(); }
+            else if(localStorage.getItem('ms_guest')==='1'){ _promptProfileAfterSignIn(); }
             loadUserDataFromFirebase();
             // Record login info so the admin panel can show who used the app and when
             db.ref('users/'+user.uid).update({
@@ -259,6 +264,7 @@ window.addEventListener('load', function(){
   renderQNotes();
   updateProfileUI();
   if(!navigator.onLine) showOfflineToast('📡 You are offline — saved content still works!',false);
+  initWelcome();
   maybeShowProfilePrompt();
   if(typeof trackCourseUserProperty==='function')trackCourseUserProperty();
 });
@@ -512,7 +518,8 @@ let userProfile = JSON.parse(localStorage.getItem('ms_profile') || '{"name":"","
 // are "grandfathered": they stay in Ulyanovsk without a code.
 let joinedUniversity = localStorage.getItem('ms_joined_uni') || null;
 function isGrandfathered(){
-  return !joinedUniversity && !!userProfile.course && (!userProfile.university || userProfile.university===DEFAULT_UNIVERSITY_ID);
+  // A guest who picked a university is NOT grandfathered — they still need that university's join code when they sign in
+  return !joinedUniversity && !!userProfile.course && localStorage.getItem('ms_guest_origin')!=='1' && (!userProfile.university || userProfile.university===DEFAULT_UNIVERSITY_ID);
 }
 function exemptUniversity(){ // the university this student may use without entering a code
   return joinedUniversity || (isGrandfathered() ? DEFAULT_UNIVERSITY_ID : null);
@@ -707,8 +714,10 @@ function _saveProfileNow(){
 // keeps gently re-prompting each session until a course is actually set, since course-locking
 // (Study Material / Videos / MCQ / Leaderboard all showing only their own course) depends on it.
 function maybeShowProfilePrompt(){
+  if(_welcomeActive) return; // the welcome screen is handling first-time setup
   if(userProfile && userProfile.course) return; // already set — stop nagging
   setTimeout(()=>{
+    if(_welcomeActive) return;
     if(userProfile && userProfile.course) return; // could've been set in the meantime
     const loginModal=document.getElementById('login-modal');
     if(loginModal && loginModal.classList.contains('open')) return; // don't stack on top of another modal
@@ -719,6 +728,105 @@ function maybeShowProfilePrompt(){
   }, 1200);
 }
 
+
+// ═══════════════ WELCOME (first open) ═══════════════
+// First time the app opens: ask to sign in, or continue as a guest (university + course only, no code).
+// Guests read notes and videos (public in Firebase). When they sign in later they fill in name + join code.
+function _markWelcomeDone(){ try{ localStorage.setItem('ms_welcome_done','1'); }catch(e){} }
+function initWelcome(){
+  const el=document.getElementById('welcome-overlay'); if(!el) return; // an older cached page may not have it yet
+  if(localStorage.getItem('ms_welcome_done')) return;
+  if(userProfile && userProfile.course){ _markWelcomeDone(); return; } // existing student — never show
+  _welcomeActive=true; el.style.display='block';
+  const _a=document.getElementById('welcome-step-choice'), _b=document.getElementById('welcome-step-guest');
+  if(_a) _a.style.display='block'; if(_b) _b.style.display='none';
+}
+function hideWelcome(){
+  _welcomeActive=false;
+  const el=document.getElementById('welcome-overlay'); if(el) el.style.display='none';
+}
+function welcomeSignIn(){ openLoginModal('Sign in to continue'); }
+function welcomeShowGuest(){
+  document.getElementById('welcome-step-choice').style.display='none';
+  document.getElementById('welcome-step-guest').style.display='block';
+  _welcomeFillUnis(0);
+}
+function openWelcomeGuest(){ // guest changing their university/course later
+  const el=document.getElementById('welcome-overlay'); if(!el) return;
+  el.style.display='block';
+  welcomeShowGuest();
+}
+function welcomeBack(){
+  if(localStorage.getItem('ms_welcome_done')){ hideWelcome(); return; }
+  document.getElementById('welcome-step-guest').style.display='none';
+  document.getElementById('welcome-step-choice').style.display='block';
+}
+function _welcomeErr(msg){
+  const e=document.getElementById('welcome-err'); if(!e) return;
+  e.textContent=msg||''; e.style.display=msg?'block':'none';
+}
+function _welcomeFillUnis(tries){
+  const sel=document.getElementById('welcome-uni'); if(!sel) return;
+  const render=()=>{
+    sel.innerHTML='<option value="">Select your university...</option>'+universities.map(u=>`<option value="${u.id}">${escapeHTML(u.name)}</option>`).join('');
+    const pre=localStorage.getItem('ms_guest')==='1' ? userProfile.university : '';
+    if(pre && universities.some(u=>u.id===pre)){ sel.value=pre; welcomeUniChanged(userProfile.course); }
+    _welcomeErr('');
+  };
+  if(universities.length){ render(); return; }
+  sel.innerHTML='<option value="">Loading universities...</option>';
+  if(!db){
+    if(tries<20){ setTimeout(()=>_welcomeFillUnis(tries+1),700); }
+    else { sel.innerHTML='<option value="">Select your university...</option>'; _welcomeErr('Could not load universities. Check your internet and reopen the app.'); }
+    return;
+  }
+  db.ref('medistudy_universities').once('value').then(snap=>{
+    const d=snap.val();
+    if(d){ universities=d; localStorage.setItem('ms4_universities', JSON.stringify(universities)); }
+    if(universities.length) render();
+    else { sel.innerHTML='<option value="">Select your university...</option>'; _welcomeErr('No universities found yet. Try again later.'); }
+  }).catch(()=>{ sel.innerHTML='<option value="">Select your university...</option>'; _welcomeErr('Could not load universities. Check your internet and try again.'); });
+}
+function welcomeUniChanged(selectedCourse){
+  const uni=document.getElementById('welcome-uni').value;
+  const cs=document.getElementById('welcome-course');
+  const empty='<option value="">Select your course...</option>';
+  if(!uni||!db){ cs.innerHTML=empty; return; }
+  cs.innerHTML='<option value="">Loading courses...</option>';
+  db.ref('medistudy_courses/'+uni).once('value').then(snap=>{
+    const list=fbList(snap.val());
+    cs.innerHTML=empty+list.map(c=>`<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('');
+    cs.value = (typeof selectedCourse==='string' && list.some(c=>c.id===selectedCourse)) ? selectedCourse : '';
+  }).catch(()=>{ cs.innerHTML=empty; _welcomeErr('Could not load courses. Check your internet.'); });
+}
+function welcomeStartGuest(){
+  const uni=document.getElementById('welcome-uni').value;
+  const course=document.getElementById('welcome-course').value;
+  if(!uni){ _welcomeErr('Please select your university.'); return; }
+  if(!course){ _welcomeErr('Please select your course.'); return; }
+  userProfile.university=uni; userProfile.course=course;
+  localStorage.setItem('ms_profile', JSON.stringify(userProfile));
+  localStorage.setItem('ms_guest','1');
+  localStorage.setItem('ms_guest_origin','1');
+  _markWelcomeDone();
+  subscribeToUniversityCourses(uni);
+  subscribeToCourseContent(uni, course);
+  smView={level:'subjects',courseId:course};
+  hideWelcome();
+  updateProfileUI();
+  renderMaterial(); renderVideosPage();
+  if(typeof goPage==='function') goPage('home', true);
+}
+// After a guest/first-open sign-in: show the profile form (university + course already filled in) so they add name and join code
+function _promptProfileAfterSignIn(){
+  setTimeout(()=>{
+    const wasGuest=localStorage.getItem('ms_guest')==='1'; // cleared by loadUserDataFromFirebase if this account already has a profile
+    if(wasGuest && joinedUniversity){ localStorage.removeItem('ms_guest'); return; } // already a member — nothing to enter
+    if(!wasGuest && userProfile && userProfile.course) return; // existing student on a new device
+    if(wasGuest) localStorage.removeItem('ms_guest');
+    closeLoginModal(); openProfile(); showProfileEdit();
+  },1800);
+}
 
 // ═══════════════ AUTH ═══════════════
 
@@ -744,6 +852,8 @@ function loadUserDataFromFirebase(){
     const d = snap.val();
     // Merge Firebase data into local — Firebase wins (it's the source of truth)
     if(d.profile){
+      // An account that already has a saved profile is an existing student, not a fresh guest
+      if(d.profile.course){ localStorage.removeItem('ms_guest'); localStorage.removeItem('ms_guest_origin'); }
       userProfile = Object.assign(userProfile, d.profile);
       localStorage.setItem('ms_profile', JSON.stringify(userProfile));
       updateProfileUI();
@@ -894,7 +1004,19 @@ function doGoogleSignIn(){
 }
 function doSignOut(){
   if(!auth)return;
-  auth.signOut().then(()=>{closeProfile();});
+  auth.signOut().then(()=>{
+    closeProfile();
+    // Back to the welcome screen with a clean slate (a shared phone must not keep the last person's profile).
+    // Signing in again restores their profile from Firebase.
+    try{ ['ms_profile','ms_joined_uni','ms_guest','ms_guest_origin','ms_welcome_done'].forEach(k=>localStorage.removeItem(k)); }catch(e){}
+    userProfile={name:'',university:'',course:'',gender:'',age:''};
+    joinedUniversity=null; _dirSyncedFor=null;
+    smView={level:'courses'};
+    saveLastScreen('home');
+    initWelcome();
+    updateProfileUI();
+    try{ goPage('home', true); }catch(e){}
+  });
 }
 function updateAuthUI(){
   const avatarBtn=document.getElementById('profile-avatar-btn');
@@ -927,7 +1049,9 @@ function updateAuthUI(){
     if(avatarBtn) avatarBtn.textContent='👤';
     if(avatarBig) avatarBig.textContent='👤';
     if(nameDis) nameDis.textContent='Not signed in';
-    if(courseDis) courseDis.textContent='Sign in to sync your data';
+    const _isGuest=localStorage.getItem('ms_guest')==='1';
+    if(courseDis) courseDis.textContent=_isGuest ? ('Guest'+(((courses.find(c=>c.id===userProfile.course)||{}).name)?' — '+(courses.find(c=>c.id===userProfile.course)||{}).name:'')) : 'Sign in to sync your data';
+    const _gb=document.getElementById('profile-guest-change'); if(_gb) _gb.style.display=_isGuest?'block':'none';
     if(loggedOutView) loggedOutView.style.display='block';
     if(loggedInView) loggedInView.style.display='none';
   }
