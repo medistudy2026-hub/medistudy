@@ -537,6 +537,26 @@
       <button class="submit-btn" onclick="welcomeStartGuest()">Start →</button>
       <button class="profile-close-btn" style="width:100%;margin-top:10px;" onclick="welcomeBack()">← Back</button>
     </div>
+
+    <div id="welcome-step-join" style="display:none;">
+      <h2 style="text-align:center;font-size:18px;margin:0 0 4px;">Join your university</h2>
+      <p style="text-align:center;color:var(--muted);font-size:12px;line-height:1.6;margin:0 0 16px;">Choose your university and course, then enter the join code your university admin shared.</p>
+      <div class="form-group">
+        <label>YOUR UNIVERSITY</label>
+        <select id="join-uni" class="lb-input" onchange="welcomeUniChanged(undefined,'join-uni','join-course')" style="margin-bottom:0;"><option value="">Select your university...</option></select>
+      </div>
+      <div class="form-group">
+        <label>YOUR COURSE</label>
+        <select id="join-course" class="lb-input" style="margin-bottom:0;"><option value="">Select your course...</option></select>
+      </div>
+      <div class="form-group">
+        <label>JOIN CODE</label>
+        <input type="text" id="join-code" class="lb-input" placeholder="Code from your university admin" autocapitalize="characters" autocomplete="off" style="margin-bottom:0;text-transform:uppercase;letter-spacing:2px;" onkeydown="if(event.key==='Enter')joinGateSubmit()">
+      </div>
+      <div id="join-err" style="color:#e85d38;font-size:12px;margin:0 0 8px;display:none;"></div>
+      <button class="submit-btn" id="join-btn" onclick="joinGateSubmit()">Join &amp; continue →</button>
+      <button class="profile-close-btn" style="width:100%;margin-top:10px;" onclick="doSignOut()">🚪 Sign out</button>
+    </div>
   </div>
 </div>
 <!-- LOGIN MODAL -->

@@ -85,7 +85,7 @@ function connectFirebase(){
   initFirebase(()=>{flashSuccess('fb-success','✅ Firebase connected!');updateFBStatus();updateHomeBanner();});
 }
 let auth=null, currentUser=null, authReady=false;
-let _welcomeActive=false; // true while the first-open welcome screen is showing
+let _welcomeActive=false, _joinGateActive=false; // true while the first-open welcome screen is showing
 // Fallback: if Firebase Auth doesn't load in 8s, unlock all pages anyway
 setTimeout(()=>{ if(!authReady){ authReady=true; } restoreLastScreen(); }, 8000);
 
@@ -549,6 +549,7 @@ function loadMembership(){
       joinedUniversity=null; localStorage.removeItem('ms_joined_uni');
     }
     syncDirectory();
+    if(!failed) maybeShowJoinGate();
   }).catch(e=>console.warn('Membership check failed:',e));
 }
 // Student directory: this student's own small record (name, course, last login) under their university, so that
@@ -714,10 +715,11 @@ function _saveProfileNow(){
 // keeps gently re-prompting each session until a course is actually set, since course-locking
 // (Study Material / Videos / MCQ / Leaderboard all showing only their own course) depends on it.
 function maybeShowProfilePrompt(){
-  if(_welcomeActive) return; // the welcome screen is handling first-time setup
+  if(_welcomeActive || _joinGateActive) return; // the welcome screen is handling first-time setup
   if(userProfile && userProfile.course) return; // already set — stop nagging
   setTimeout(()=>{
-    if(_welcomeActive) return;
+    if(_welcomeActive || _joinGateActive) return;
+    if(currentUser || (auth && auth.currentUser)) return; // signed-in students are handled by the required "Join your university" step
     if(userProfile && userProfile.course) return; // could've been set in the meantime
     const loginModal=document.getElementById('login-modal');
     if(loginModal && loginModal.classList.contains('open')) return; // don't stack on top of another modal
@@ -740,6 +742,7 @@ function initWelcome(){
   _welcomeActive=true; el.style.display='block';
   const _a=document.getElementById('welcome-step-choice'), _b=document.getElementById('welcome-step-guest');
   if(_a) _a.style.display='block'; if(_b) _b.style.display='none';
+  const _j=document.getElementById('welcome-step-join'); if(_j) _j.style.display='none';
 }
 function hideWelcome(){
   _welcomeActive=false;
@@ -761,35 +764,37 @@ function welcomeBack(){
   document.getElementById('welcome-step-guest').style.display='none';
   document.getElementById('welcome-step-choice').style.display='block';
 }
-function _welcomeErr(msg){
-  const e=document.getElementById('welcome-err'); if(!e) return;
+function _welcomeErr(msg, selId){
+  const e=document.getElementById(selId==='join-uni'?'join-err':'welcome-err'); if(!e) return;
   e.textContent=msg||''; e.style.display=msg?'block':'none';
 }
-function _welcomeFillUnis(tries){
-  const sel=document.getElementById('welcome-uni'); if(!sel) return;
+function _welcomeFillUnis(tries, selId, courseId){
+  selId=selId||'welcome-uni'; courseId=courseId||'welcome-course';
+  const sel=document.getElementById(selId); if(!sel) return;
   const render=()=>{
     sel.innerHTML='<option value="">Select your university...</option>'+universities.map(u=>`<option value="${u.id}">${escapeHTML(u.name)}</option>`).join('');
-    const pre=localStorage.getItem('ms_guest')==='1' ? userProfile.university : '';
-    if(pre && universities.some(u=>u.id===pre)){ sel.value=pre; welcomeUniChanged(userProfile.course); }
-    _welcomeErr('');
+    const pre=(selId==='join-uni'||localStorage.getItem('ms_guest')==='1') ? userProfile.university : '';
+    if(pre && universities.some(u=>u.id===pre)){ sel.value=pre; welcomeUniChanged(userProfile.course, selId, courseId); }
+    _welcomeErr('', selId);
   };
   if(universities.length){ render(); return; }
   sel.innerHTML='<option value="">Loading universities...</option>';
   if(!db){
-    if(tries<20){ setTimeout(()=>_welcomeFillUnis(tries+1),700); }
-    else { sel.innerHTML='<option value="">Select your university...</option>'; _welcomeErr('Could not load universities. Check your internet and reopen the app.'); }
+    if(tries<20){ setTimeout(()=>_welcomeFillUnis(tries+1,selId,courseId),700); }
+    else { sel.innerHTML='<option value="">Select your university...</option>'; _welcomeErr('Could not load universities. Check your internet and reopen the app.', selId); }
     return;
   }
   db.ref('medistudy_universities').once('value').then(snap=>{
     const d=snap.val();
     if(d){ universities=d; localStorage.setItem('ms4_universities', JSON.stringify(universities)); }
     if(universities.length) render();
-    else { sel.innerHTML='<option value="">Select your university...</option>'; _welcomeErr('No universities found yet. Try again later.'); }
-  }).catch(()=>{ sel.innerHTML='<option value="">Select your university...</option>'; _welcomeErr('Could not load universities. Check your internet and try again.'); });
+    else { sel.innerHTML='<option value="">Select your university...</option>'; _welcomeErr('No universities found yet. Try again later.', selId); }
+  }).catch(()=>{ sel.innerHTML='<option value="">Select your university...</option>'; _welcomeErr('Could not load universities. Check your internet and try again.', selId); });
 }
-function welcomeUniChanged(selectedCourse){
-  const uni=document.getElementById('welcome-uni').value;
-  const cs=document.getElementById('welcome-course');
+function welcomeUniChanged(selectedCourse, selId, courseId){
+  selId=selId||'welcome-uni'; courseId=courseId||'welcome-course';
+  const uni=document.getElementById(selId).value;
+  const cs=document.getElementById(courseId);
   const empty='<option value="">Select your course...</option>';
   if(!uni||!db){ cs.innerHTML=empty; return; }
   cs.innerHTML='<option value="">Loading courses...</option>';
@@ -797,7 +802,7 @@ function welcomeUniChanged(selectedCourse){
     const list=fbList(snap.val());
     cs.innerHTML=empty+list.map(c=>`<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('');
     cs.value = (typeof selectedCourse==='string' && list.some(c=>c.id===selectedCourse)) ? selectedCourse : '';
-  }).catch(()=>{ cs.innerHTML=empty; _welcomeErr('Could not load courses. Check your internet.'); });
+  }).catch(()=>{ cs.innerHTML=empty; _welcomeErr('Could not load courses. Check your internet.', selId); });
 }
 function welcomeStartGuest(){
   const uni=document.getElementById('welcome-uni').value;
@@ -817,15 +822,73 @@ function welcomeStartGuest(){
   renderMaterial(); renderVideosPage();
   if(typeof goPage==='function') goPage('home', true);
 }
-// After a guest/first-open sign-in: show the profile form (university + course already filled in) so they add name and join code
-function _promptProfileAfterSignIn(){
-  setTimeout(()=>{
-    const wasGuest=localStorage.getItem('ms_guest')==='1'; // cleared by loadUserDataFromFirebase if this account already has a profile
-    if(wasGuest && joinedUniversity){ localStorage.removeItem('ms_guest'); return; } // already a member — nothing to enter
-    if(!wasGuest && userProfile && userProfile.course) return; // existing student on a new device
-    if(wasGuest) localStorage.removeItem('ms_guest');
-    closeLoginModal(); openProfile(); showProfileEdit();
-  },1800);
+// After sign-in, loadMembership() decides whether the student still has to join a university (see maybeShowJoinGate)
+function _promptProfileAfterSignIn(){}
+
+// ── Required "Join your university" step ──
+// A signed-in student who has not joined a university (and is not a grandfathered Ulyanovsk student) must choose
+// university + course and enter the join code BEFORE they can see the home page. Firebase checks the code itself.
+function maybeShowJoinGate(){
+  if(!currentUser || currentUser.uid===SUPER_UID) return;
+  if(joinedUniversity || isGrandfathered()) return;
+  if(!document.getElementById('welcome-step-join')) return; // an older cached page may not have the new screen yet
+  showJoinGate();
+}
+function showJoinGate(){
+  _joinGateActive=true;
+  try{ closeProfile(); closeLoginModal(); }catch(e){}
+  const el=document.getElementById('welcome-overlay'); if(!el) return;
+  el.style.display='block';
+  document.getElementById('welcome-step-choice').style.display='none';
+  document.getElementById('welcome-step-guest').style.display='none';
+  document.getElementById('welcome-step-join').style.display='block';
+  const jc=document.getElementById('join-code'); if(jc) jc.value='';
+  _welcomeErr('', 'join-uni');
+  _welcomeFillUnis(0,'join-uni','join-course');
+}
+function hideJoinGate(){
+  _joinGateActive=false;
+  const el=document.getElementById('welcome-overlay'); if(el) el.style.display='none';
+  const j=document.getElementById('welcome-step-join'); if(j) j.style.display='none';
+}
+function joinGateSubmit(){
+  const uni=document.getElementById('join-uni').value;
+  const course=document.getElementById('join-course').value;
+  const code=(document.getElementById('join-code').value||'').trim().toUpperCase();
+  const uniName=(universities.find(u=>u.id===uni)||{}).name||uni;
+  if(!uni){ _welcomeErr('Please select your university.','join-uni'); return; }
+  if(!course){ _welcomeErr('Please select your course.','join-uni'); return; }
+  if(!code){ _welcomeErr('Enter the join code for '+uniName+'. Ask your university admin for it.','join-uni'); return; }
+  if(!db||!currentUser){ _welcomeErr('Not connected. Check your internet and try again.','join-uni'); return; }
+  const btn=document.getElementById('join-btn');
+  const reset=()=>{ if(btn){ btn.disabled=false; btn.textContent='Join & continue →'; } };
+  if(btn){ btn.disabled=true; btn.textContent='Checking code…'; }
+  _welcomeErr('','join-uni');
+  const write=db.ref('medistudy_members/'+uni+'/'+currentUser.uid).set({code:code, ts:Date.now()});
+  const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000));
+  Promise.race([write,timeout]).then(()=>{
+    reset();
+    joinedUniversity=uni; localStorage.setItem('ms_joined_uni',uni);
+    localStorage.removeItem('ms_guest'); localStorage.removeItem('ms_guest_origin');
+    userProfile.university=uni; userProfile.course=course;
+    if(!userProfile.name) userProfile.name=currentUser.displayName||'';
+    localStorage.setItem('ms_profile', JSON.stringify(userProfile));
+    syncToFirebase('profile', userProfile);
+    syncDirectory(true);
+    subscribeToUniversityCourses(uni);
+    subscribeToCourseContent(uni, course);
+    smView={level:'subjects',courseId:course};
+    hideJoinGate();
+    updateProfileUI();
+    renderMaterial(); renderVideosPage();
+    if(typeof trackCourseUserProperty==='function')trackCourseUserProperty();
+    try{ goPage('home', true); }catch(e){}
+  }).catch(e=>{
+    reset();
+    if(e.message==='timeout') _welcomeErr('Could not reach the server. Check your internet and try again.','join-uni');
+    else if(/permission/i.test(e.message)) _welcomeErr('That join code is not correct for '+uniName+'. Ask your university admin for the current code.','join-uni');
+    else _welcomeErr('Could not save: '+e.message,'join-uni');
+  });
 }
 
 // ═══════════════ AUTH ═══════════════
@@ -1005,7 +1068,7 @@ function doGoogleSignIn(){
 function doSignOut(){
   if(!auth)return;
   auth.signOut().then(()=>{
-    closeProfile();
+    closeProfile(); _joinGateActive=false;
     // Back to the welcome screen with a clean slate (a shared phone must not keep the last person's profile).
     // Signing in again restores their profile from Firebase.
     try{ ['ms_profile','ms_joined_uni','ms_guest','ms_guest_origin','ms_welcome_done'].forEach(k=>localStorage.removeItem(k)); }catch(e){}

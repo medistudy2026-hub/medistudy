@@ -1,6 +1,6 @@
 // MediStudy Service Worker — sw.js
 // Works on GitHub Pages (/medistudy/) and any custom domain
-const CACHE_NAME = 'medistudy-shell-v22';
+const CACHE_NAME = 'medistudy-shell-v23';
 const SKIP_WAITING_MSG = 'SKIP_WAITING';
 const NAV_TIMEOUT_MS = 4000; // how long to wait for the network before showing the saved page
 
