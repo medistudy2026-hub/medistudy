@@ -103,6 +103,7 @@ function initFirebase(cb){
           authReady=true;
           updateAuthUI();
           restoreLastScreen();
+          if(!user) trackGuestVisit();
           const warnEl=document.getElementById('admin-signedin-warning');
           if(warnEl) warnEl.style.display = currentUser ? 'none' : 'block';
           if(user){
@@ -820,7 +821,22 @@ function welcomeStartGuest(){
   hideWelcome();
   updateProfileUI();
   renderMaterial(); renderVideosPage();
+  trackGuestVisit();
   if(typeof goPage==='function') goPage('home', true);
+}
+// Anonymous guest counter: no name, no email, no per-guest record. Adds +1 to two tiny daily counters
+// (medistudy_guest_stats/<university>/<yyyy-mm-dd>/new and /active) so admins can see how many guests use the app.
+// "active" counts once per day per phone; "new" counts once ever per phone.
+function trackGuestVisit(){
+  try{
+    if(!db || currentUser || localStorage.getItem('ms_guest')!=='1') return;
+    const uni=userProfile && userProfile.university; if(!uni) return;
+    const day=new Date().toISOString().slice(0,10);
+    const bump=k=>db.ref('medistudy_guest_stats/'+uni+'/'+day+'/'+k).transaction(v=>(v||0)+1).catch(()=>{});
+    if(localStorage.getItem('ms_guest_new')!=='1'){ localStorage.setItem('ms_guest_new','1'); bump('new'); }
+    const mark=day+'|'+uni;
+    if(localStorage.getItem('ms_guest_day')!==mark){ localStorage.setItem('ms_guest_day',mark); bump('active'); }
+  }catch(e){ console.warn('Guest count skipped:',e); }
 }
 // After sign-in, loadMembership() decides whether the student still has to join a university (see maybeShowJoinGate)
 function _promptProfileAfterSignIn(){}

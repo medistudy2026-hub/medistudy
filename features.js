@@ -616,14 +616,28 @@ function pdfSearchPrev(){
 }
 
 // Download a PDF from Google Drive with retry (handles virus-scan warning page)
-async function _driveDownloadWithConfirm(fileId){
+async function _driveDownloadWithConfirm(fileId, onProgress){
   // Route through Cloudflare Worker to bypass Google Drive CORS block
   const workerUrl=`https://calm-lake-2eaf.medistudy2026.workers.dev/pdf?id=${fileId}`;
   _pdfDebugToast('Fetching via Worker: '+fileId.slice(0,12)+'...');
   try{
     const resp=await fetch(workerUrl);
     if(!resp.ok){ _pdfDebugToast('Worker error: HTTP '+resp.status); return null; }
-    const blob=await resp.blob();
+    let blob;
+    if(onProgress && resp.body && resp.body.getReader){
+      // Read the file in pieces so the viewer can show "4 MB / 27 MB" while a large note downloads
+      const total=parseInt(resp.headers.get('Content-Length')||'0',10)||0;
+      const reader=resp.body.getReader(); const chunks=[]; let got=0;
+      for(;;){
+        const {done,value}=await reader.read();
+        if(done) break;
+        chunks.push(value); got+=value.length;
+        try{ onProgress(got,total); }catch(e){}
+      }
+      blob=new Blob(chunks,{type:resp.headers.get('Content-Type')||'application/pdf'});
+    } else {
+      blob=await resp.blob();
+    }
     if(blob.type.includes('text/html')||blob.size<5000){
       _pdfDebugToast('Worker returned HTML/tiny: '+blob.size+'b type:'+blob.type);
       return null;
@@ -633,6 +647,20 @@ async function _driveDownloadWithConfirm(fileId){
   }catch(e){
     _pdfDebugToast('Worker fetch exception: '+(e.message||String(e)).slice(0,60));
     return null;
+  }
+}
+
+// Shows "Downloading PDF... 4.2 MB / 27 MB (15%)" in the viewer while a note downloads.
+// If the server does not report the file size, only the amount downloaded so far is shown.
+function _fmtMB(n){ const mb=n/1048576; return (mb<10?mb.toFixed(1):Math.round(mb))+' MB'; }
+function _pdfDownloadProgress(got,total){
+  const el=document.getElementById('pdf-loading-msg'); if(!el) return;
+  if(total && got<=total){
+    const pct=Math.min(100,Math.round(got/total*100));
+    el.textContent='Downloading PDF... '+_fmtMB(got)+' / '+_fmtMB(total)+' ('+pct+'%)';
+    _pdfSetProgress(20+Math.round(pct*0.4));
+  } else {
+    el.textContent='Downloading PDF... '+_fmtMB(got)+' downloaded';
   }
 }
 
@@ -675,7 +703,7 @@ async function openPDF(note){
   if(fileId){
     // Try direct download via Drive export (best for PDF.js + offline caching)
     try{
-      const blob = await _driveDownloadWithConfirm(fileId);
+      const blob = await _driveDownloadWithConfirm(fileId, _pdfDownloadProgress);
       if(blob){
         _pdfShowLoading('Rendering PDF...');
         await _renderPdfFromBlob(blob);

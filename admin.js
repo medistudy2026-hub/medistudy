@@ -1284,8 +1284,9 @@ function loadDashboard(){
     db.ref('medistudy_hours_lb').once('value'),
     db.ref('medistudy_feedback').orderByChild('universityId').equalTo(uni).limitToLast(200).once('value'),
     db.ref('medistudy_likes').once('value'),
-    isSuper ? db.ref('users').once('value') : Promise.resolve(null)
-  ]).then(([dirSnap,hoursSnap,fbSnap,likesSnap,usersSnap])=>{
+    isSuper ? db.ref('users').once('value') : Promise.resolve(null),
+    db.ref('medistudy_guest_stats/'+uni).orderByKey().limitToLast(30).once('value').catch(()=>null) // null if the new rules are not published yet
+  ]).then(([dirSnap,hoursSnap,fbSnap,likesSnap,usersSnap,guestSnap])=>{
     if(uni!==ADMIN_ACTIVE_UNIVERSITY_ID) return; // admin switched university meanwhile
     // Students of this university
     const dir=dirSnap.val()||{};
@@ -1300,6 +1301,25 @@ function loadDashboard(){
     const fbData=fbSnap.val()||{};
     const newCount=Object.values(fbData).filter(f=>(f.status||'New')==='New').length;
 
+    // Guests (not signed in): anonymous daily counters
+    let guestHtml='';
+    if(guestSnap){
+      const gs=guestSnap.val()||{};
+      const today=new Date().toISOString().slice(0,10);
+      const days=Object.keys(gs).sort();
+      const sum=(keys,f)=>keys.reduce((s,d)=>s+((gs[d]&&gs[d][f])||0),0);
+      const last7=days.filter(d=>d>=new Date(Date.now()-6*864e5).toISOString().slice(0,10));
+      guestHtml=`
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;">
+        <div style="font-size:12px;color:var(--muted);">👀 Guests (not signed in)</div>
+        <div style="font-size:18px;font-weight:800;">${(gs[today]&&gs[today].active)||0} <span style="font-size:12px;font-weight:400;color:var(--muted);">active today</span> &nbsp; ${(gs[today]&&gs[today].new)||0} <span style="font-size:12px;font-weight:400;color:var(--muted);">new today</span></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">Last 7 days: ${sum(last7,'active')} guest visits &nbsp;·&nbsp; Last 30 days: ${sum(days,'new')} new guests</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px;">Counted per phone, no personal data. Clearing browser data or using two phones can count the same person twice.</div>
+      </div>`;
+    } else {
+      guestHtml=`<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:12px;color:var(--muted);">👀 Guests: publish the latest Firebase rules to see guest numbers.</div>`;
+    }
+
     // Notes/Videos totals (already in memory for the selected university)
     const noteCount=notes.length, vidCount=videos.length;
 
@@ -1311,6 +1331,7 @@ function loadDashboard(){
         <div style="font-size:12px;color:var(--muted);margin-top:2px;">⏱ ${totalHours.toFixed(1)}h combined time in app</div>
         ${overall!==null?`<div style="font-size:11px;color:var(--muted);margin-top:2px;">All accounts, all universities: ${overall}</div>`:''}
       </div>
+      ${guestHtml}
       <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;">
         <div style="font-size:12px;color:var(--muted);">💬 Feedback</div>
         <div style="font-size:18px;font-weight:800;color:${newCount>0?'#3b82f6':'var(--text)'};">${newCount} <span style="font-size:12px;font-weight:400;color:var(--muted);">🔵 New (unreviewed)</span></div>
