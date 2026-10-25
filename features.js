@@ -89,6 +89,7 @@ function _pdfSetProgress(pct){
   document.getElementById('pdf-progress-bar').style.width=pct+'%';
 }
 function _pdfShowLoading(msg){
+  _fsHide();
   document.getElementById('pdf-loading').style.display='flex';
   document.getElementById('pdf-loading-msg').textContent=msg||'Opening document...';
   document.getElementById('pdf-canvas-container').style.display='none';
@@ -108,6 +109,7 @@ function _pdfShowCanvas(){
   setTimeout(()=>_pdfSetProgress(0),600);
 }
 function _pdfShowFallbackIframe(url){
+  _fsHide();
   document.getElementById('pdf-loading').style.display='none';
   document.getElementById('pdf-canvas-container').style.display='none';
   document.getElementById('pdf-frame').src=url;
@@ -117,6 +119,7 @@ function _pdfShowFallbackIframe(url){
   _pdfSetProgress(0);
 }
 function _pdfShowError(msg){
+  _fsHide();
   document.getElementById('pdf-loading').style.display='none';
   document.getElementById('pdf-canvas-container').style.display='none';
   document.getElementById('pdf-frame').style.display='none';
@@ -155,6 +158,114 @@ async function _renderPdfFromBlob(blob){
     console.warn('PDF.js render failed:',e);
     _pdfShowFallbackIframe(pdfBlobUrl);
   }
+}
+
+// ═══════════════ FAST-SCROLL HANDLE (long notes) ═══════════════
+// A draggable handle on the right edge so a 600-page note can be crossed in one swipe.
+// Shown only for notes with FASTSCROLL_MIN_PAGES pages or more. While dragging it shows "Page N / total".
+const FASTSCROLL_MIN_PAGES = 12;
+let _fsDragging=false, _fsIdleTimer=null, _fsRaf=0, _fsReady=false, _fsPageNow=1;
+function _fsEls(){
+  return { box:document.getElementById('pdf-fastscroll'), thumb:document.getElementById('pdf-fastscroll-thumb'),
+           bubble:document.getElementById('pdf-fastscroll-bubble'), c:document.getElementById('pdf-canvas-container') };
+}
+// Keeps the handle's track exactly over the page area (the top and bottom bars can show/hide)
+function _fsLayout(){
+  const {box,c}=_fsEls(); if(!box||!c) return;
+  const r=c.getBoundingClientRect();
+  box.style.top=(r.top+6)+'px';
+  box.style.height=Math.max(0,r.height-62)+'px'; // leave room at the bottom for the ⤢ button
+}
+function _fsWake(){
+  const {thumb}=_fsEls(); if(!thumb) return;
+  thumb.classList.add('awake');
+  clearTimeout(_fsIdleTimer);
+  _fsIdleTimer=setTimeout(()=>{ if(!_fsDragging) thumb.classList.remove('awake'); },2500);
+}
+function _fsPlace(){
+  const {box,thumb,c}=_fsEls();
+  if(!box||!thumb||!c||box.style.display==='none'||_fsDragging) return;
+  const max=c.scrollHeight-c.clientHeight;
+  const frac=max>0?Math.min(1,Math.max(0,c.scrollTop/max)):0;
+  const track=Math.max(0,box.clientHeight-thumb.offsetHeight);
+  thumb.style.transform='translateY('+Math.round(frac*track)+'px)';
+  _fsWake();
+}
+function _fsSync(){
+  if(_fsRaf) return;
+  _fsRaf=requestAnimationFrame(()=>{ _fsRaf=0; _fsPlace(); });
+}
+// Which page is at the top of the screen (binary search, so it stays fast with hundreds of pages)
+function _fsPageAtTop(c){
+  const kids=c.children; if(!kids.length) return 1;
+  const limit=c.getBoundingClientRect().top + c.clientHeight*0.5;
+  let lo=0, hi=kids.length-1, ans=0;
+  while(lo<=hi){
+    const mid=(lo+hi)>>1;
+    if(kids[mid].getBoundingClientRect().top<=limit){ ans=mid; lo=mid+1; } else { hi=mid-1; }
+  }
+  return Math.max(1,Math.min(ans+1,pdfTotalPages||kids.length));
+}
+function _fsStart(e){
+  const {thumb,bubble}=_fsEls(); if(!thumb) return;
+  _fsDragging=true;
+  try{ thumb.setPointerCapture(e.pointerId); }catch(err){}
+  thumb.classList.add('drag','awake');
+  bubble.style.display='block';
+  clearTimeout(_fsIdleTimer);
+  _fsMove(e);
+  e.preventDefault();
+}
+function _fsMove(e){
+  if(!_fsDragging) return;
+  const {box,thumb,bubble,c}=_fsEls();
+  const rect=box.getBoundingClientRect();
+  const th=thumb.offsetHeight;
+  const track=Math.max(1,rect.height-th);
+  const y=Math.max(0,Math.min(track,e.clientY-rect.top-th/2));
+  thumb.style.transform='translateY('+Math.round(y)+'px)';
+  c.scrollTop=(y/track)*Math.max(0,c.scrollHeight-c.clientHeight);
+  _fsPageNow=_fsPageAtTop(c);
+  bubble.textContent='Page '+_fsPageNow+' / '+pdfTotalPages;
+  bubble.style.transform='translateY('+Math.round(y+(th-32)/2)+'px)';
+  e.preventDefault();
+}
+function _fsEnd(){
+  if(!_fsDragging) return;
+  _fsDragging=false;
+  const {thumb,bubble}=_fsEls();
+  thumb.classList.remove('drag');
+  bubble.style.display='none';
+  pdfCurrentPage=_fsPageNow; _updateNavBar();
+  _onPdfScrollDebounced(); // draw the pages we landed on right away
+  _fsWake();
+}
+function _fsShow(){
+  const {box,thumb,c}=_fsEls(); if(!box||!thumb||!c) return; // an older cached page may not have the handle yet
+  if(!_fsReady){
+    _fsReady=true;
+    thumb.addEventListener('pointerdown',_fsStart);
+    thumb.addEventListener('pointermove',_fsMove);
+    thumb.addEventListener('pointerup',_fsEnd);
+    thumb.addEventListener('pointercancel',_fsEnd);
+    c.addEventListener('scroll',_fsSync,{passive:true});
+    if(typeof ResizeObserver!=='undefined') new ResizeObserver(()=>{ _fsLayout(); _fsSync(); }).observe(c);
+    window.addEventListener('resize',()=>{ _fsLayout(); _fsSync(); });
+  }
+  if(pdfTotalPages>=FASTSCROLL_MIN_PAGES){
+    box.style.display='block';
+    _fsLayout();
+    thumb.style.transform='translateY(0px)';
+    _fsWake();
+  } else {
+    box.style.display='none';
+  }
+}
+function _fsHide(){
+  const {box,bubble}=_fsEls(); if(!box) return;
+  _fsDragging=false;
+  box.style.display='none';
+  if(bubble) bubble.style.display='none';
 }
 
 // ═══════════════ LAZY PDF RENDERER ═══════════════
@@ -248,6 +359,8 @@ async function _renderAllPages(preservePage){
     const ph = document.getElementById(`pdf-page-${preservePage}`);
     if(ph) container.scrollTop = ph.offsetTop;
   }
+
+  _fsShow(); // fast-scroll handle for long notes
 
   // STEP 3: Render first visible pages immediately
   await _lazyRenderAround(pdfCurrentPage);
@@ -734,6 +847,7 @@ function closePDF(){
   overlay.classList.remove('immersive');
   clearTimeout(pdfImmersiveTimer); pdfImmersiveTimer=null;
   document.getElementById('pdf-immersive-hint').classList.remove('show');
+  _fsHide();
   // Cleanup
   if(pdfBlobUrl){ URL.revokeObjectURL(pdfBlobUrl); pdfBlobUrl=null; }
   pdfCurrentBlob=null;
