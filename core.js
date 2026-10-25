@@ -828,31 +828,38 @@ function welcomeStartGuest(){
 // (medistudy_guest_stats/<university>/<yyyy-mm-dd>/new and /active) so admins can see how many guests use the app.
 // "active" counts once per day per phone; "new" counts once ever per phone.
 function trackGuestVisit(){
+  // Add ?debugguest=1 to the app link on a test phone to see a pop-up with the exact result of the guest count
+  const dbg=m=>{ try{ if(location.search.indexOf('debugguest')>-1) alert('Guest count test: '+m); }catch(e){} };
   try{
-    if(!db || currentUser || localStorage.getItem('ms_guest')!=='1') return;
-    if(typeof firebase==='undefined' || !firebase.database || !firebase.database.ServerValue || !firebase.database.ServerValue.increment) return;
-    const uni=userProfile && userProfile.university; if(!uni) return;
+    if(!db){ dbg('not counted: Firebase not connected yet'); return; }
+    if(currentUser){ dbg('not counted: you are signed in (guests only)'); return; }
+    if(localStorage.getItem('ms_guest')!=='1'){ dbg('not counted: this phone is not in guest mode'); return; }
+    if(typeof firebase==='undefined' || !firebase.database || !firebase.database.ServerValue || !firebase.database.ServerValue.increment){ dbg('not counted: Firebase increment is not available'); return; }
+    const uni=userProfile && userProfile.university; if(!uni){ dbg('not counted: no university chosen'); return; }
     const day=new Date().toISOString().slice(0,10);
     // "+1" is done by the Firebase server itself, so a guest never needs permission to READ the counter.
     // If a write fails (offline, rules not published yet), forget the "already counted" mark so the next open tries again.
     const bump=(k,undo)=>{
       db.ref('medistudy_guest_stats/'+uni+'/'+day+'/'+k).set(firebase.database.ServerValue.increment(1))
-        .then(()=>{ try{ localStorage.setItem('ms_guest_err',''); }catch(e){} })
+        .then(()=>{ try{ localStorage.setItem('ms_guest_err',''); }catch(e){} dbg('OK, counted "'+k+'" for '+uni+' on '+day); })
         .catch(e=>{
           try{ localStorage.setItem('ms_guest_err',String((e&&e.message)||e).slice(0,140)); undo(); }catch(_){}
           console.warn('Guest count failed:',e);
+          dbg('FAILED for "'+k+'": '+((e&&e.message)||e));
         });
     };
+    let sent=0;
     if(localStorage.getItem('ms_guest_new')!=='1'){
-      localStorage.setItem('ms_guest_new','1');
+      localStorage.setItem('ms_guest_new','1'); sent++;
       bump('new',()=>localStorage.removeItem('ms_guest_new'));
     }
     const mark=day+'|'+uni;
     if(localStorage.getItem('ms_guest_day')!==mark){
-      localStorage.setItem('ms_guest_day',mark);
+      localStorage.setItem('ms_guest_day',mark); sent++;
       bump('active',()=>localStorage.removeItem('ms_guest_day'));
     }
-  }catch(e){ console.warn('Guest count skipped:',e); }
+    if(!sent) dbg('already counted today on this phone (it counts once per day). Clear this site\'s data or wait until tomorrow to test again.');
+  }catch(e){ console.warn('Guest count skipped:',e); dbg('error: '+e.message); }
 }
 // After sign-in, loadMembership() decides whether the student still has to join a university (see maybeShowJoinGate)
 function _promptProfileAfterSignIn(){}
