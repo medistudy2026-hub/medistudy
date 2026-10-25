@@ -830,12 +830,28 @@ function welcomeStartGuest(){
 function trackGuestVisit(){
   try{
     if(!db || currentUser || localStorage.getItem('ms_guest')!=='1') return;
+    if(typeof firebase==='undefined' || !firebase.database || !firebase.database.ServerValue || !firebase.database.ServerValue.increment) return;
     const uni=userProfile && userProfile.university; if(!uni) return;
     const day=new Date().toISOString().slice(0,10);
-    const bump=k=>db.ref('medistudy_guest_stats/'+uni+'/'+day+'/'+k).transaction(v=>(v||0)+1).catch(()=>{});
-    if(localStorage.getItem('ms_guest_new')!=='1'){ localStorage.setItem('ms_guest_new','1'); bump('new'); }
+    // "+1" is done by the Firebase server itself, so a guest never needs permission to READ the counter.
+    // If a write fails (offline, rules not published yet), forget the "already counted" mark so the next open tries again.
+    const bump=(k,undo)=>{
+      db.ref('medistudy_guest_stats/'+uni+'/'+day+'/'+k).set(firebase.database.ServerValue.increment(1))
+        .then(()=>{ try{ localStorage.setItem('ms_guest_err',''); }catch(e){} })
+        .catch(e=>{
+          try{ localStorage.setItem('ms_guest_err',String((e&&e.message)||e).slice(0,140)); undo(); }catch(_){}
+          console.warn('Guest count failed:',e);
+        });
+    };
+    if(localStorage.getItem('ms_guest_new')!=='1'){
+      localStorage.setItem('ms_guest_new','1');
+      bump('new',()=>localStorage.removeItem('ms_guest_new'));
+    }
     const mark=day+'|'+uni;
-    if(localStorage.getItem('ms_guest_day')!==mark){ localStorage.setItem('ms_guest_day',mark); bump('active'); }
+    if(localStorage.getItem('ms_guest_day')!==mark){
+      localStorage.setItem('ms_guest_day',mark);
+      bump('active',()=>localStorage.removeItem('ms_guest_day'));
+    }
   }catch(e){ console.warn('Guest count skipped:',e); }
 }
 // After sign-in, loadMembership() decides whether the student still has to join a university (see maybeShowJoinGate)

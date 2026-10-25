@@ -1315,6 +1315,7 @@ function loadDashboard(){
         <div style="font-size:18px;font-weight:800;">${(gs[today]&&gs[today].active)||0} <span style="font-size:12px;font-weight:400;color:var(--muted);">active today</span> &nbsp; ${(gs[today]&&gs[today].new)||0} <span style="font-size:12px;font-weight:400;color:var(--muted);">new today</span></div>
         <div style="font-size:11px;color:var(--muted);margin-top:2px;">Last 7 days: ${sum(last7,'active')} guest visits &nbsp;·&nbsp; Last 30 days: ${sum(days,'new')} new guests</div>
         <div style="font-size:10px;color:var(--muted);margin-top:2px;">Counted per phone, no personal data. Clearing browser data or using two phones can count the same person twice.</div>
+        ${(localStorage.getItem('ms_guest_err')||'')?`<div style="font-size:10px;color:#e85d38;margin-top:4px;">⚠️ This phone's last guest count failed: ${escapeHTML(localStorage.getItem('ms_guest_err'))}</div>`:''}
       </div>`;
     } else {
       guestHtml=`<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-size:12px;color:var(--muted);">👀 Guests: publish the latest Firebase rules to see guest numbers.</div>`;
