@@ -1674,7 +1674,9 @@ function renderEssentials(){
   db.ref('medistudy_essentials').orderByChild('order').once('value',snap=>{
     if(!snap||!snap.exists()){el.innerHTML='<div style="color:var(--muted);font-size:13px;padding:20px 0;text-align:center;">Nothing added yet. Check back soon!</div>';return;}
     const items=[];
-    snap.forEach(c=>items.push(c.val()));
+    const myUni=getStudentUniversityId();
+    snap.forEach(c=>{const v=c.val(); if(!v.universityId||v.universityId===myUni) items.push(v);});
+    if(!items.length){el.innerHTML='<div style="color:var(--muted);font-size:13px;padding:20px 0;text-align:center;">Nothing added yet. Check back soon!</div>';return;}
     el.innerHTML=items.map((it,i)=>`
       <div class="ess-card">
         <div class="ess-title" onclick="toggleEss(${i})"><span>${escapeHTML(it.title)}</span><span class="ess-arrow" id="ess-arrow-${i}">▾</span></div>

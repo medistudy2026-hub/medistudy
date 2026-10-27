@@ -265,6 +265,7 @@ window.addEventListener('load', function(){
   renderQNotes();
   updateProfileUI();
   if(!navigator.onLine) showOfflineToast('📡 You are offline — saved content still works!',false);
+  renderSponsorBrand();
   initWelcome();
   maybeShowProfilePrompt();
   if(typeof trackCourseUserProperty==='function')trackCourseUserProperty();
@@ -357,8 +358,22 @@ function ensureFullAdminDataLoaded(cb){
   }).catch(e=>{ console.warn('Admin data load failed:', e); done(); });
 }
 
+// "Sponsored by …" line (Home + About). The name is set by the super admin (Firebase tab → Sponsor branding).
+function renderSponsorBrand(){
+  const name=(localStorage.getItem('ms_sponsor_name')||'').trim();
+  ['home-sponsor','about-sponsor'].forEach(id=>{
+    const el=document.getElementById(id); if(!el) return;
+    if(!name){ el.style.display='none'; el.textContent=''; return; }
+    el.textContent='🤝 Sponsored by '+name; el.style.display='block';
+  });
+}
 initFirebase(function(){
   if(!db) return;
+  db.ref('medistudy_sponsor').once('value').then(s=>{
+    const v=s.val();
+    try{ localStorage.setItem('ms_sponsor_name',(v&&v.name)?String(v.name).slice(0,80):''); }catch(e){}
+    renderSponsorBrand();
+  }).catch(()=>{});
   // Always-on, lightweight — the university list, so students can pick one.
   db.ref('medistudy_universities').on('value', function(snap){
     const d = snap.val();

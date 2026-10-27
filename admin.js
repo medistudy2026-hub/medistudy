@@ -102,8 +102,11 @@ async function resolveAdminAccess(){
     const v=(await db.ref('medistudy_admins/'+user.uid).once('value')).val();
     if(!v) return null;
     const unis=Object.keys(v.universities||{}).filter(k=>v.universities[k]===true);
-    if(!unis.length) return null;
-    return {role:'uni', universities:unis};
+    if(unis.length) return {role:'uni', universities:unis};
+    // Sponsor: read-only view of one university (medistudy_admins/<uid>/sponsorUniversities)
+    const sp=Object.keys(v.sponsorUniversities||{}).filter(k=>v.sponsorUniversities[k]===true);
+    if(sp.length) return {role:'sponsor', universities:sp};
+    return null;
   }catch(e){ console.warn('Admin role lookup failed:', e); return null; }
 }
 function checkPw(){
@@ -115,7 +118,14 @@ function checkPw(){
   crypto.subtle.digest('SHA-256',msgBuffer).then(async hashBuffer=>{
     const hashArray=Array.from(new Uint8Array(hashBuffer));
     const hashHex=hashArray.map(b=>b.toString(16).padStart(2,'0')).join('');
-    if(hashHex===SPONSOR_HASH){ adminUnlocked=true;adminRole='sponsor';adminUniversities=null;showPanel();return; }
+    if(hashHex===SPONSOR_HASH){
+      // Sponsor: the password plus the sponsor's own MediStudy account (student names are private, so Firebase checks the account too)
+      if(!(currentUser||(auth&&auth.currentUser))){ showErr('❌ Sign in to MediStudy with your own account first (profile icon), then open this panel again.'); return; }
+      const sAccess=await resolveAdminAccess();
+      if(!sAccess || sAccess.role!=='sponsor'){ showErr('❌ This account is not set up as a sponsor yet. Ask Ankit to add you.'); return; }
+      adminUnlocked=true; adminRole='sponsor'; adminUniversities=sAccess.universities;
+      showPanel(); return;
+    }
     // Two locks: (1) a password for the account type, (2) the signed-in account itself.
     //   super admin → PASS_HASH password;  university admins → one shared EDITOR_HASH password.
     if(hashHex!==PASS_HASH && hashHex!==EDITOR_HASH){ showErr('❌ Wrong password.'); return; }
@@ -133,12 +143,13 @@ function showPanel(){
   document.getElementById('admin-panel').style.display='block';
   document.getElementById('admin-signedin-warning').style.display = currentUser ? 'none' : 'block';
   if(adminRole==='sponsor'){
-    // Limited view: only Announcements + Student Essentials, nothing else
+    // Sponsor view (read-only): Dashboard, signed-in Students and Announcements — for the sponsor's own university only
     document.getElementById('admin-university-bar').style.display='none';
     document.querySelectorAll('.atab').forEach(t=>t.style.display='none');
-    document.getElementById('atab-announce').style.display='';
-    document.getElementById('atab-essentials').style.display='';
-    switchATab('announce', document.getElementById('atab-announce'));
+    if(adminUniversities && adminUniversities.length) ADMIN_ACTIVE_UNIVERSITY_ID = adminUniversities[0];
+    ['dashboard','students','announce','essentials'].forEach(t=>{ const el=document.getElementById('atab-'+t); if(el) el.style.display=''; });
+    ensureFullAdminDataLoaded(refreshActiveAdminTab);
+    switchATab('dashboard', document.getElementById('atab-dashboard'));
     return;
   }
   const isSuper = adminRole==='super';
@@ -178,7 +189,7 @@ function switchATab(tab,el){
   if(tab==='dashboard')loadDashboard();
   if(tab==='notes'){updateNoteSubjects();updateNoteFolders();}
   if(tab==='videos')updateVidSubjects();
-  if(tab==='firebase'){updateFBStatus();if(adminRole==='super')loadAdminRoles();}
+  if(tab==='firebase'){updateFBStatus();if(adminRole==='super'){loadAdminRoles();loadSponsorBrand();}}
   if(tab==='announce'){loadAdminAnnouncements();populateAnnouncementAudienceSelect();}
   if(tab==='essentials')loadAdminEssentials();
   if(tab==='mcq'){loadAdminMCQSets();populateMCQSubjectDropdowns();}
@@ -802,7 +813,9 @@ function addEssential(){
   const content=document.getElementById('ess-content-input').value.trim();
   if(!title||!content){alert('Fill in title and content.');return;}
   const id='ess_'+Date.now();
-  db.ref('medistudy_essentials/'+id).set({id,title,content,order:Date.now(),ts:Date.now()})
+  const essItem={id,title,content,order:Date.now(),ts:Date.now()};
+  if(adminRole==='sponsor') essItem.universityId=ADMIN_ACTIVE_UNIVERSITY_ID; // sponsor items belong to one university only
+  db.ref('medistudy_essentials/'+id).set(essItem)
     .then(()=>{
       document.getElementById('ess-title-input').value='';
       document.getElementById('ess-content-input').value='';
@@ -821,6 +834,7 @@ function loadAdminEssentials(){
     let html='';
     snap.forEach(c=>{
       const it=c.val();
+      if(adminRole==='sponsor' && it.universityId!==ADMIN_ACTIVE_UNIVERSITY_ID) return;
       html+=`<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;position:relative;">
         <div style="font-weight:700;font-size:12px;padding-right:60px;">${escapeHTML(it.title)}</div>
         <div style="font-size:11px;color:var(--muted);margin-top:2px;white-space:pre-wrap;">${escapeHTML(it.content)}</div>
@@ -1245,7 +1259,7 @@ function renderStudentsList(){
     return `<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:12px;">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:2px;">
         <div style="font-weight:700;">${escapeHTML(s.name)}</div>
-        <button class="del-btn" title="Remove from this university so they can choose again" onclick="resetStudentUniversity('${s.uid}')">🔓 Reset university</button>
+        ${adminRole==='sponsor'?'':`<button class="del-btn" title="Remove from this university so they can choose again" onclick="resetStudentUniversity('${s.uid}')">🔓 Reset university</button>`}
       </div>
       ${s.email!==null?`<div style="color:var(--muted);">✉️ ${escapeHTML(s.email)}</div>
       <div style="color:var(--muted);font-size:10px;">🆔 ${escapeHTML(s.uid)}</div>`:''}
@@ -1275,14 +1289,14 @@ function loadDashboard(){
   const cardsEl=document.getElementById('dash-summary-cards');
   const likedEl=document.getElementById('dash-top-liked');
   if(!db||!fbConnected){ cardsEl.innerHTML='<div style="color:var(--muted);font-size:12px;">Connect Firebase first.</div>'; return; }
-  const uni=ADMIN_ACTIVE_UNIVERSITY_ID, isSuper=adminRole==='super';
+  const uni=ADMIN_ACTIVE_UNIVERSITY_ID, isSuper=adminRole==='super', isSponsor=adminRole==='sponsor';
   cardsEl.innerHTML='<div style="color:var(--muted);font-size:12px;">Loading...</div>';
   likedEl.innerHTML='';
 
   Promise.all([
     db.ref('medistudy_directory/'+uni).once('value'),
     db.ref('medistudy_hours_lb').once('value'),
-    db.ref('medistudy_feedback').orderByChild('universityId').equalTo(uni).limitToLast(200).once('value'),
+    isSponsor ? Promise.resolve(null) : db.ref('medistudy_feedback').orderByChild('universityId').equalTo(uni).limitToLast(200).once('value'),
     db.ref('medistudy_likes').once('value'),
     isSuper ? db.ref('users').once('value') : Promise.resolve(null),
     db.ref('medistudy_guest_stats/'+uni).orderByKey().limitToLast(30).once('value').catch(()=>null) // null if the new rules are not published yet
@@ -1298,7 +1312,7 @@ function loadDashboard(){
     const overall=usersSnap?Object.keys(usersSnap.val()||{}).length:null;
 
     // New feedback count (this university)
-    const fbData=fbSnap.val()||{};
+    const fbData=fbSnap?(fbSnap.val()||{}):{};
     const newCount=Object.values(fbData).filter(f=>(f.status||'New')==='New').length;
 
     // Guests (not signed in): anonymous daily counters
@@ -1333,10 +1347,10 @@ function loadDashboard(){
         ${overall!==null?`<div style="font-size:11px;color:var(--muted);margin-top:2px;">All accounts, all universities: ${overall}</div>`:''}
       </div>
       ${guestHtml}
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;">
+      ${isSponsor?'':`<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;">
         <div style="font-size:12px;color:var(--muted);">💬 Feedback</div>
         <div style="font-size:18px;font-weight:800;color:${newCount>0?'#3b82f6':'var(--text)'};">${newCount} <span style="font-size:12px;font-weight:400;color:var(--muted);">🔵 New (unreviewed)</span></div>
-      </div>
+      </div>`}
       <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;">
         <div style="font-size:12px;color:var(--muted);">📚 Content</div>
         <div style="font-size:18px;font-weight:800;">${noteCount} <span style="font-size:12px;font-weight:400;color:var(--muted);">notes</span> &nbsp; ${vidCount} <span style="font-size:12px;font-weight:400;color:var(--muted);">videos</span></div>
@@ -1481,7 +1495,7 @@ function loadAdminRoles(){
     _rolesCache=aSnap.val()||{};
     const users=uSnap.val()||{};
     const uids=Object.keys(_rolesCache);
-    if(!uids.length){ el.innerHTML='<div style="color:var(--muted);font-size:12px;">No university admins yet.</div>'; return; }
+    if(!uids.length){ el.innerHTML='<div style="color:var(--muted);font-size:12px;">No university admins or sponsors yet.</div>'; return; }
     el.innerHTML=uids.map(uid=>{
       const r=_rolesCache[uid]||{};
       const email=(users[uid]&&users[uid].email)||'(email unknown)';
@@ -1490,7 +1504,12 @@ function loadAdminRoles(){
         const nm=(universities.find(x=>x.id===u)||{}).name||u;
         return `<span style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:2px 4px 2px 10px;font-size:11px;margin:3px 4px 0 0;">${escapeHTML(nm)} <button onclick="revokeUniversityAdmin('${uid}','${u}')" style="background:#e85d38;border:none;color:#fff;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;">✕</button></span>`;
       }).join('');
-      return `<div style="background:var(--card);border:1px solid var(--border);border-radius:9px;padding:9px 11px;margin-bottom:6px;"><div style="font-size:12px;font-weight:700;">${escapeHTML(email)}</div><div style="font-size:10px;color:var(--muted);word-break:break-all;">${escapeHTML(uid)}</div>${chips}</div>`;
+      const spUnis=Object.keys(r.sponsorUniversities||{}).filter(k=>r.sponsorUniversities[k]===true);
+      const spChips=spUnis.map(u=>{
+        const nm=(universities.find(x=>x.id===u)||{}).name||u;
+        return `<span style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--accent);border-radius:14px;padding:2px 4px 2px 10px;font-size:11px;margin:3px 4px 0 0;">⭐ Sponsor · ${escapeHTML(nm)} <button onclick="revokeSponsor('${uid}')" style="background:#e85d38;border:none;color:#fff;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;">✕</button></span>`;
+      }).join('');
+      return `<div style="background:var(--card);border:1px solid var(--border);border-radius:9px;padding:9px 11px;margin-bottom:6px;"><div style="font-size:12px;font-weight:700;">${escapeHTML(email)}</div><div style="font-size:10px;color:var(--muted);word-break:break-all;">${escapeHTML(uid)}</div>${chips}${spChips}</div>`;
     }).join('');
   }).catch(e=>{ el.innerHTML='<span style="color:#e85d38;font-size:12px;">Could not load: '+escapeHTML(e.message)+'</span>'; });
 }
@@ -1521,6 +1540,61 @@ async function grantUniversityAdmin(){
     say('✅ Done. They can now open the admin panel (with the admin/editor password) and manage '+escapeHTML(uni)+'.');
     loadAdminRoles();
   }catch(e){ say('❌ Failed: '+escapeHTML(e.message),true); }
+}
+// Sponsor: read-only Dashboard + Students list + announcements for ONE university (medistudy_admins/<uid>/sponsorUniversities)
+async function grantSponsor(){
+  const st=document.getElementById('role-status');
+  const who=document.getElementById('role-who-inp').value.trim();
+  const uni=document.getElementById('role-uni-sel').value;
+  const say=(m,bad)=>{ st.innerHTML=bad?'<span style="color:#e85d38">'+m+'</span>':m; };
+  if(adminRole!=='super'){ say('❌ Super admin only.',true); return; }
+  if(!who||!uni){ say('Enter their email (or UID) and pick a university.',true); return; }
+  try{
+    let uid=null;
+    if(who.includes('@')){
+      const users=(await db.ref('users').once('value')).val()||{};
+      const hit=Object.keys(users).filter(k=>(((users[k]||{}).email)||'').toLowerCase()===who.toLowerCase());
+      if(hit.length!==1){ say('❌ No single account found for that email. They must sign in to MediStudy once first — or paste their UID instead.',true); return; }
+      uid=hit[0];
+    } else {
+      if(!/^[A-Za-z0-9]{20,40}$/.test(who)){ say('❌ That does not look like a UID.',true); return; }
+      uid=who;
+    }
+    if(uid===SUPER_UID){ say('That is you — you are already super admin.',true); return; }
+    const existing=(await db.ref('medistudy_admins/'+uid).once('value')).val()||{};
+    const updates={};
+    if(!existing.role) updates['medistudy_admins/'+uid+'/role']='sponsor';
+    updates['medistudy_admins/'+uid+'/sponsorUniversities/'+uni]=true;
+    await db.ref().update(updates);
+    document.getElementById('role-who-inp').value='';
+    say('✅ Done. They can now open the admin panel with the sponsor password and see the Dashboard, Students and Announcements for '+escapeHTML(uni)+' (read-only).');
+    loadAdminRoles();
+  }catch(e){ say('❌ Failed: '+escapeHTML(e.message),true); }
+}
+function revokeSponsor(uid){
+  if(!confirm('Remove sponsor access from this person?')) return;
+  const r=_rolesCache[uid]||{};
+  const hasUniAdmin=Object.keys(r.universities||{}).some(k=>r.universities[k]===true);
+  const updates={};
+  if(hasUniAdmin) updates['medistudy_admins/'+uid+'/sponsorUniversities']=null;
+  else updates['medistudy_admins/'+uid]=null;
+  db.ref().update(updates).then(loadAdminRoles).catch(e=>alert('Failed: '+e.message));
+}
+
+// ── Sponsor branding: the "Sponsored by …" line on the Home and About pages (medistudy_sponsor/name) ──
+function loadSponsorBrand(){
+  const inp=document.getElementById('sponsor-name-inp'); if(!inp||!db) return;
+  db.ref('medistudy_sponsor').once('value').then(s=>{ const v=s.val(); inp.value=(v&&v.name)||''; }).catch(()=>{});
+}
+function saveSponsorBrand(remove){
+  const st=document.getElementById('sponsor-brand-status');
+  if(adminRole!=='super'){ st.textContent='❌ Super admin only.'; return; }
+  const name=remove?'':document.getElementById('sponsor-name-inp').value.trim().slice(0,80);
+  if(!remove && !name){ st.textContent='Enter the sponsor name first (or use Remove).'; return; }
+  adminTrack(remove?db.ref('medistudy_sponsor').remove():db.ref('medistudy_sponsor').set({name,ts:Date.now()}), remove?'Sponsor removed':'Sponsor saved').then(ok=>{
+    st.textContent=ok?(remove?'✅ Removed. Students will no longer see a sponsor line.':'✅ Saved. Students will see "Sponsored by '+name+'" the next time they open the app.'):'❌ Not saved.';
+    if(ok){ try{ localStorage.setItem('ms_sponsor_name',name); if(typeof renderSponsorBrand==='function') renderSponsorBrand(); }catch(e){} if(remove) document.getElementById('sponsor-name-inp').value=''; }
+  });
 }
 function revokeUniversityAdmin(uid,uniId){
   if(!confirm('Remove admin rights for '+uniId+' from this person?')) return;
