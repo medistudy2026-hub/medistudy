@@ -565,6 +565,7 @@ function loadMembership(){
       joinedUniversity=null; localStorage.removeItem('ms_joined_uni');
     }
     syncDirectory();
+    try{ updateJoinCodeUI(); }catch(e){}
     if(!failed) maybeShowJoinGate();
   }).catch(e=>console.warn('Membership check failed:',e));
 }
@@ -675,6 +676,13 @@ function saveProfile(){
   const uniName=(universities.find(u=>u.id===uniVal)||{}).name||uniVal;
   const _jcEl=document.getElementById('profile-joincode-inp');
   const code=(_jcEl?_jcEl.value:'').trim().toUpperCase();
+  // A code is needed but the box is missing/hidden (older cached page, or the account data arrived late):
+  // never leave the student stuck — open the "Join your university" screen, which always has the code box.
+  updateJoinCodeUI();
+  const _jbox=document.getElementById('profile-joincode-box');
+  if(!_jcEl || !_jbox || _jbox.style.display==='none'){
+    if(currentUser && document.getElementById('welcome-step-join')){ showJoinGate(); return; }
+  }
   if(!code){ alert('Enter the join code for '+uniName+'. Ask your university admin for it.'); return; }
   if(!db||!currentUser){ alert('Sign in first, then save your profile.'); return; }
   const btn=document.querySelector('#profile-edit-form .profile-edit-btn');
